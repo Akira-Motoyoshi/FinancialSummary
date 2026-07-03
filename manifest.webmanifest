@@ -1,0 +1,27 @@
+{
+  "id": "./",
+  "name": "こつこつ家計簿",
+  "short_name": "こつこつ",
+  "description": "収支・予算・貯金をシンプルに管理する家計簿",
+  "lang": "ja",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#edf7ff",
+  "theme_color": "#edf7ff",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

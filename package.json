@@ -1,0 +1,15 @@
+{
+  "name": "financial-summary-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node --check app.js && node --check ocr-service.js && node --check insights-service.js && node --check prompt-templates.js && node --check sw.js && node --test tests/release.test.mjs",
+    "lint": "node --check app.js && node --check ocr-service.js && node --check insights-service.js && node --check prompt-templates.js && node --check sw.js",
+    "typecheck": "node --check app.js && node --check ocr-service.js && node --check insights-service.js && node --check prompt-templates.js && node --check sw.js",
+    "test": "node --test tests/release.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

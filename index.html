@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#edf7ff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="こつこつ" />
+    <title>こつこつ家計簿</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon-192.png" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-loader" role="status" aria-label="家計簿を読み込み中">
+      <div class="loader-mark">K</div>
+      <div class="loader-copy"><strong>こつこつ家計簿</strong><span>データを整えています</span></div>
+      <div class="loader-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+    </div>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="page-eyebrow">MY FINANCE</p>
+          <h1 id="page-title">ホーム</h1>
+        </div>
+        <button class="icon-button" id="header-settings-button" aria-label="設定を開く">⚙︎</button>
+      </header>
+
+      <main>
+        <section class="page active" id="page-home" data-page="home"></section>
+        <section class="page" id="page-list" data-page="list"></section>
+        <section class="page" id="page-recurring" data-page="recurring"></section>
+        <section class="page" id="page-analysis" data-page="analysis"></section>
+        <section class="page" id="page-budget" data-page="budget"></section>
+        <section class="page" id="page-savings" data-page="savings"></section>
+        <section class="page" id="page-settings" data-page="settings"></section>
+      </main>
+
+      <nav class="bottom-nav" aria-label="メインメニュー">
+        <button class="nav-item active" data-target="home"><span>⌂</span>ホーム</button>
+        <button class="nav-item" data-target="savings"><span>◇</span>貯金</button>
+        <button class="nav-item record-nav" data-action="open-record-sheet"><span>＋</span>記録</button>
+        <button class="nav-item" data-target="analysis"><span>▥</span>分析</button>
+        <button class="nav-item" data-target="settings"><span>⚙︎</span>設定</button>
+      </nav>
+    </div>
+
+    <dialog id="record-action-dialog" class="action-sheet">
+      <div class="action-sheet-panel">
+        <div class="dialog-head">
+          <div><p class="dialog-kicker">NEW RECORD</p><h2>記録方法を選択</h2></div>
+          <button type="button" class="icon-button close-dialog" aria-label="閉じる">×</button>
+        </div>
+        <button class="action-choice" type="button" data-action="record-manual">
+          <span class="choice-icon">＋</span><span><strong>手入力</strong><small>金額・カテゴリ・日付・メモを入力</small></span><i>›</i>
+        </button>
+        <button class="action-choice" type="button" data-action="record-ocr">
+          <span class="choice-icon">▣</span><span><strong>OCRで読み取り</strong><small>レシート・スクリーンショットを解析</small></span><i>›</i>
+        </button>
+      </div>
+    </dialog>
+
+    <dialog id="transaction-dialog">
+      <form method="dialog" id="transaction-form">
+        <input type="hidden" name="id" />
+        <div class="dialog-head">
+          <h2 id="transaction-dialog-title">収支を追加</h2>
+          <button type="button" class="icon-button close-dialog" aria-label="閉じる">×</button>
+        </div>
+        <div class="segmented">
+          <label><input type="radio" name="type" value="expense" checked /><span>支出</span></label>
+          <label><input type="radio" name="type" value="income" /><span>収入</span></label>
+        </div>
+        <label class="field">金額<input name="amount" type="number" min="1" inputmode="numeric" required placeholder="例：1200" /></label>
+        <label class="field">日付<input name="date" type="date" required /></label>
+        <label class="field">カテゴリ<select name="category" required></select><span class="field-hint" id="transaction-category-hint"></span></label>
+        <label class="field">メモ<input name="memo" maxlength="50" placeholder="例：スーパー" /></label>
+        <div class="dialog-actions">
+          <button type="button" class="danger text-button hidden" id="delete-transaction-button">削除</button>
+          <button type="submit" class="primary-button">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="recurring-dialog">
+      <form method="dialog" id="recurring-form">
+        <input type="hidden" name="id" />
+        <div class="dialog-head">
+          <h2 id="recurring-dialog-title">固定費を追加</h2>
+          <button type="button" class="icon-button close-dialog" aria-label="閉じる">×</button>
+        </div>
+        <div class="segmented">
+          <label><input type="radio" name="type" value="expense" checked /><span>支出</span></label>
+          <label><input type="radio" name="type" value="income" /><span>収入</span></label>
+        </div>
+        <label class="field">名前<input name="name" maxlength="30" required placeholder="例：家賃" /></label>
+        <label class="field">金額<input name="amount" type="number" min="1" inputmode="numeric" required /></label>
+        <label class="field">毎月の記録日<input name="day" type="number" min="1" max="28" inputmode="numeric" required /></label>
+        <label class="field">カテゴリ<select name="category" required></select></label>
+        <label class="switch-row">自動記録を有効にする<input name="active" type="checkbox" checked /></label>
+        <div class="dialog-actions">
+          <button type="button" class="danger text-button hidden" id="delete-recurring-button">削除</button>
+          <button type="submit" class="primary-button">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="budget-dialog">
+      <form method="dialog" id="budget-form">
+        <div class="dialog-head">
+          <h2>カテゴリ予算</h2>
+          <button type="button" class="icon-button close-dialog" aria-label="閉じる">×</button>
+        </div>
+        <label class="field">カテゴリ<select name="category" required></select></label>
+        <label class="field">月額予算<input name="amount" type="number" min="0" inputmode="numeric" required /></label>
+        <div class="dialog-actions">
+          <button type="submit" class="primary-button">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="savings-goal-dialog">
+      <form method="dialog" id="savings-goal-form">
+        <input type="hidden" name="id" />
+        <div class="dialog-head">
+          <h2 id="savings-goal-dialog-title">貯金目標を追加</h2>
+          <button type="button" class="icon-button close-dialog" aria-label="閉じる">×</button>
+        </div>
+        <label class="field">目標名<input name="name" maxlength="30" required placeholder="例：旅行資金" /></label>
+        <label class="field">目標金額<input name="targetAmount" type="number" min="1" inputmode="numeric" required /></label>
+        <label class="field">現在の貯金額<input name="currentAmount" type="number" min="0" inputmode="numeric" required /></label>
+        <label class="field">期限<input name="deadline" type="date" /></label>
+        <div class="dialog-actions">
+          <button type="button" class="danger text-button hidden" id="delete-savings-goal-button">削除</button>
+          <button type="submit" class="primary-button">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="ocr-dialog">
+      <form method="dialog" id="ocr-form">
+        <div class="dialog-head">
+          <div>
+            <p class="dialog-kicker">SCREENSHOT IMPORT</p>
+            <h2>スクショOCR入力</h2>
+          </div>
+          <button type="button" class="icon-button close-dialog" aria-label="閉じる">×</button>
+        </div>
+
+        <section id="ocr-upload-step" class="ocr-step">
+          <label class="field">画像の種類
+            <select name="sourceType" required>
+              <option value="auto">自動判定</option>
+              <option value="paypay">PayPay履歴</option>
+              <option value="card">クレカ明細</option>
+              <option value="receipt">レシート</option>
+            </select>
+          </label>
+          <label class="upload-dropzone" for="ocr-file">
+            <input id="ocr-file" name="image" type="file" accept="image/*" required />
+            <span class="upload-icon">▣</span>
+            <strong>最新スクショを選択</strong>
+            <small>写真選択が開かない場合はここをタップ</small>
+          </label>
+          <div class="ocr-preview hidden" id="ocr-preview-wrap">
+            <img id="ocr-preview" alt="選択した画像のプレビュー" />
+            <span id="ocr-filename"></span>
+          </div>
+          <p class="ocr-access-note">写真へのアクセスを求められた場合は許可してください。Web版は選択した画像だけを読み取ります。</p>
+          <p class="ocr-privacy">画像は端末内でモック解析され、外部へ送信されません。</p>
+          <button type="button" class="primary-button full-button" id="analyze-ocr-button" disabled>
+            <span class="button-label">画像を解析</span>
+            <span class="button-loading hidden">解析中…</span>
+          </button>
+        </section>
+
+        <section id="ocr-review-step" class="ocr-step hidden">
+          <div class="ocr-result-head">
+            <div><span class="success-dot">✓</span><strong>解析結果</strong></div>
+            <span class="mock-badge">MOCK OCR</span>
+          </div>
+          <label class="field">抽出テキスト
+            <textarea name="rawText" rows="4" required></textarea>
+          </label>
+          <div class="ocr-field-grid">
+            <label class="field">日付<input name="date" type="date" required /></label>
+            <label class="field">金額<input name="amount" type="number" min="1" inputmode="numeric" required /></label>
+          </div>
+          <label class="field">店名<input name="merchant" maxlength="50" required /></label>
+          <label class="field">支払い方法
+            <select name="paymentMethod" required>
+              <option value="PayPay">PayPay</option>
+              <option value="クレジットカード">クレジットカード</option>
+              <option value="現金">現金</option>
+              <option value="その他">その他</option>
+            </select>
+          </label>
+          <label class="field">カテゴリ候補
+            <select name="category" required></select>
+            <span class="field-hint" id="ocr-category-hint"></span>
+          </label>
+          <div class="dialog-actions">
+            <button type="button" class="text-button" id="ocr-back-button">画像を選び直す</button>
+            <button type="submit" class="primary-button">確認して登録</button>
+          </div>
+        </section>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./prompt-templates.js"></script>
+    <script src="./insights-service.js"></script>
+    <script src="./ocr-service.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>
