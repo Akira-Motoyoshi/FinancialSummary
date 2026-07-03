@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import vm from "node:vm";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -32,4 +33,24 @@ test("service worker caches only declared static assets", async () => {
 test("all PWA assets referenced by the manifest exist", async () => {
   const manifest = JSON.parse(await read("manifest.webmanifest"));
   await Promise.all(manifest.icons.map((icon) => readFile(new URL(`..\/${icon.src.replace("./", "")}`, import.meta.url))));
+});
+
+test("OCR uses a real browser engine instead of fixed mock profiles", async () => {
+  const [html, service] = await Promise.all([read("index.html"), read("ocr-service.js")]);
+  assert.match(html, /\.\/vendor\/tesseract\.min\.js/);
+  assert.match(service, /createWorker\("jpn\+eng"/);
+  assert.match(service, /provider: "tesseract"/);
+  assert.doesNotMatch(service, /mockProfiles/);
+
+  const context = { window: {} };
+  vm.runInNewContext(service, context);
+  const parsed = context.window.OCRService.parseText(
+    "PayPay\n支払い完了\nセブン-イレブン\n2026年7月3日\n支払金額 1,280円",
+    { sourceType: "auto", fallbackDate: "2026-07-04" },
+  );
+  assert.equal(parsed.sourceType, "paypay");
+  assert.equal(parsed.date, "2026-07-03");
+  assert.equal(parsed.amount, 1280);
+  assert.equal(parsed.merchant, "セブン-イレブン");
+  assert.equal(parsed.paymentMethod, "PayPay");
 });

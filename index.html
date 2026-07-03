@@ -169,7 +169,7 @@
             <span id="ocr-filename"></span>
           </div>
           <p class="ocr-access-note">写真へのアクセスを求められた場合は許可してください。Web版は選択した画像だけを読み取ります。</p>
-          <p class="ocr-privacy">画像は端末内でモック解析され、外部へ送信されません。</p>
+          <p class="ocr-privacy">画像は端末内OCRで解析されます。初回のみOCR辞書の読み込みに時間がかかります。</p>
           <button type="button" class="primary-button full-button" id="analyze-ocr-button" disabled>
             <span class="button-label">画像を解析</span>
             <span class="button-loading hidden">解析中…</span>
@@ -179,7 +179,7 @@
         <section id="ocr-review-step" class="ocr-step hidden">
           <div class="ocr-result-head">
             <div><span class="success-dot">✓</span><strong>解析結果</strong></div>
-            <span class="mock-badge">MOCK OCR</span>
+            <span class="mock-badge">LOCAL OCR</span>
           </div>
           <label class="field">抽出テキスト
             <textarea name="rawText" rows="4" required></textarea>
@@ -212,6 +212,7 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./prompt-templates.js"></script>
     <script src="./insights-service.js"></script>
+    <script src="./vendor/tesseract.min.js"></script>
     <script src="./ocr-service.js"></script>
     <script src="./app.js"></script>
   </body>

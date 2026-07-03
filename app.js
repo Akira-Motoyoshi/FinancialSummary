@@ -937,13 +937,20 @@ async function analyzeSelectedOCRFile() {
   const form = document.querySelector("#ocr-form");
   const file = form.elements.image.files[0];
   const button = document.querySelector("#analyze-ocr-button");
+  const loading = button.querySelector(".button-loading");
   if (!file) return false;
 
   button.disabled = true;
   button.querySelector(".button-label").classList.add("hidden");
-  button.querySelector(".button-loading").classList.remove("hidden");
+  loading.textContent = "OCRを準備中…";
+  loading.classList.remove("hidden");
   try {
-    const result = await window.OCRService.analyze(file, { sourceType: form.elements.sourceType.value });
+    const result = await window.OCRService.analyze(file, {
+      sourceType: form.elements.sourceType.value,
+      onProgress(progress) {
+        loading.textContent = `解析中 ${Math.round(progress * 100)}%`;
+      },
+    });
     showOCRResult(result);
     return true;
   } catch (error) {
@@ -952,7 +959,8 @@ async function analyzeSelectedOCRFile() {
   } finally {
     button.disabled = false;
     button.querySelector(".button-label").classList.remove("hidden");
-    button.querySelector(".button-loading").classList.add("hidden");
+    loading.textContent = "解析中…";
+    loading.classList.add("hidden");
   }
 }
 

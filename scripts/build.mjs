@@ -12,10 +12,13 @@ const assets = [
   "icon.svg",
   "icon-192.png",
   "icon-512.png",
+  "vendor/tesseract.min.js",
+  "vendor/tesseract.min.js.LICENSE.txt",
 ];
 
 await rm("dist", { recursive: true, force: true });
 await mkdir("dist", { recursive: true });
+await mkdir("dist/vendor", { recursive: true });
 await Promise.all(assets.map((asset) => copyFile(asset, `dist/${asset}`)));
 
 console.log(`Built ${assets.length} static assets into dist/`);

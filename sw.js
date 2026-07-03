@@ -1,4 +1,4 @@
-const CACHE_NAME = "kotsukotsu-kakeibo-v7";
+const CACHE_NAME = "kotsukotsu-kakeibo-v9";
 const APP_ASSETS = [
   "./",
   "./index.html",
@@ -10,6 +10,7 @@ const APP_ASSETS = [
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png",
+  "./vendor/tesseract.min.js",
 ];
 
 self.addEventListener("install", (event) => {
