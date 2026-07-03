@@ -53,4 +53,17 @@ test("OCR uses a real browser engine instead of fixed mock profiles", async () =
   assert.equal(parsed.amount, 1280);
   assert.equal(parsed.merchant, "セブン-イレブン");
   assert.equal(parsed.paymentMethod, "PayPay");
+
+  const transactions = context.window.OCRService.extractTransactions(
+    "PayPay\nセブン-イレブン\n7月3日 18:42\n-1,280円\nスターバックス\n7月2日 09:10\n-550円",
+    { sourceType: "paypay", fallbackDate: "2026-07-04" },
+  );
+  assert.equal(transactions.length, 2);
+  assert.equal(
+    JSON.stringify(transactions.map(({ date, amount, merchant }) => ({ date, amount, merchant }))),
+    JSON.stringify([
+      { date: "2026-07-03", amount: 1280, merchant: "セブン-イレブン" },
+      { date: "2026-07-02", amount: 550, merchant: "スターバックス" },
+    ]),
+  );
 });

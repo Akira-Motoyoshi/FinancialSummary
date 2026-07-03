@@ -951,6 +951,34 @@ dialog form { display: grid; gap: 16px; padding: 22px; }
 .field textarea { min-height: 92px; resize: vertical; line-height: 1.55; }
 .ocr-field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .field-hint { min-height: 14px; color: var(--green); font-size: 9px; font-weight: 650; }
+.ocr-batch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: var(--ink-soft);
+  font-size: 10px;
+}
+.ocr-batch-head strong { color: var(--green); font-size: 12px; }
+#ocr-batch-list { display: grid; gap: 12px; }
+.ocr-batch-item {
+  padding: 14px;
+  border: 1px solid rgb(158 184 209 / 24%);
+  border-radius: 18px;
+  background: rgb(255 255 255 / 48%);
+}
+.ocr-batch-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.ocr-batch-title label { color: var(--green); font-size: 10px; font-weight: 750; }
+.ocr-batch-title input { vertical-align: -2px; }
+.ocr-batch-title strong { color: var(--ink-soft); font-size: 10px; }
+.ocr-batch-item .field { margin-bottom: 9px; }
+.ocr-batch-item .ocr-field-grid:last-child { grid-template-columns: 1fr; }
 
 @keyframes loader-pulse {
   0%, 70%, 100% { opacity: .3; transform: translateY(0); }

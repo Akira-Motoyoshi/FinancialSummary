@@ -786,6 +786,13 @@ function resetOCRDialog() {
   document.querySelector("#ocr-preview-wrap").classList.add("hidden");
   document.querySelector("#ocr-upload-step").classList.remove("hidden");
   document.querySelector("#ocr-review-step").classList.add("hidden");
+  document.querySelector("#ocr-single-fields").classList.remove("hidden");
+  document.querySelector("#ocr-batch-fields").classList.add("hidden");
+  document.querySelector("#ocr-batch-list").innerHTML = "";
+  ["date", "amount", "merchant", "paymentMethod", "category"].forEach((name) => {
+    form.elements[name].disabled = false;
+  });
+  document.querySelector("#ocr-submit-button").textContent = "確認して登録";
   document.querySelector("#analyze-ocr-button").disabled = true;
   document.querySelector("#analyze-ocr-button .button-label").classList.remove("hidden");
   document.querySelector("#analyze-ocr-button .button-loading").classList.add("hidden");
@@ -807,25 +814,53 @@ function openOCRDialog(pickLatest = false) {
   }
 }
 
-function setOCRCategoryOptions(result) {
-  const select = document.querySelector("#ocr-form").elements.category;
-  const candidateIds = result.categoryCandidates.map((candidate) => candidate.categoryId);
+function ocrCategoryOptions(candidates = []) {
+  const candidateIds = candidates.map((candidate) => candidate.categoryId);
   const orderedCategories = [
     ...candidateIds.map(categoryById),
     ...CATEGORIES.filter((category) => category.type === "expense" && !candidateIds.includes(category.id)),
   ];
-  select.innerHTML = orderedCategories
+  return orderedCategories
     .map((category, index) => `<option value="${category.id}">${index < candidateIds.length ? "候補・" : ""}${category.name}</option>`)
     .join("");
-  select.value = candidateIds[0] || "other-expense";
+}
+
+function setOCRCategoryOptions(result) {
+  const select = document.querySelector("#ocr-form").elements.category;
+  select.innerHTML = ocrCategoryOptions(result.categoryCandidates);
+  select.value = result.categoryCandidates[0]?.categoryId || "other-expense";
   const topCandidate = result.categoryCandidates[0];
   document.querySelector("#ocr-category-hint").textContent = topCandidate
     ? `最有力候補：${categoryById(topCandidate.categoryId).name}（${Math.round(topCandidate.score * 100)}%）`
     : "候補を選択してください";
 }
 
+function renderOCRBatch(transactions) {
+  const paymentMethods = ["PayPay", "クレジットカード", "現金", "その他"];
+  document.querySelector("#ocr-batch-count").textContent = `${transactions.length}件の明細を検出`;
+  document.querySelector("#ocr-batch-list").innerHTML = transactions.map((transaction, index) => `
+    <article class="ocr-batch-item" data-source-type="${escapeHtml(transaction.sourceType || "auto")}">
+      <div class="ocr-batch-title">
+        <label><input class="ocr-batch-include" type="checkbox" checked /> 登録する</label>
+        <strong>明細 ${index + 1}</strong>
+      </div>
+      <div class="ocr-field-grid">
+        <label class="field">日付<input data-field="date" type="date" value="${escapeHtml(transaction.date)}" /></label>
+        <label class="field">金額<input data-field="amount" type="number" min="1" inputmode="numeric" value="${Number(transaction.amount) || ""}" /></label>
+      </div>
+      <label class="field">店名<input data-field="merchant" maxlength="50" value="${escapeHtml(transaction.merchant)}" /></label>
+      <div class="ocr-field-grid">
+        <label class="field">支払い方法<select data-field="paymentMethod">${paymentMethods.map((method) =>
+          `<option value="${method}" ${method === transaction.paymentMethod ? "selected" : ""}>${method}</option>`).join("")}</select></label>
+        <label class="field">カテゴリ<select data-field="category">${ocrCategoryOptions(transaction.categoryCandidates)}</select></label>
+      </div>
+    </article>`).join("");
+}
+
 function showOCRResult(result) {
   const form = document.querySelector("#ocr-form");
+  const transactions = result.transactions || [];
+  const isBatch = transactions.length > 1;
   latestOCRResult = result;
   form.elements.rawText.value = result.rawText;
   form.elements.date.value = result.date;
@@ -833,6 +868,15 @@ function showOCRResult(result) {
   form.elements.merchant.value = result.merchant;
   form.elements.paymentMethod.value = result.paymentMethod;
   setOCRCategoryOptions(result);
+  document.querySelector("#ocr-single-fields").classList.toggle("hidden", isBatch);
+  document.querySelector("#ocr-batch-fields").classList.toggle("hidden", !isBatch);
+  ["date", "amount", "merchant", "paymentMethod", "category"].forEach((name) => {
+    form.elements[name].disabled = isBatch;
+  });
+  if (isBatch) renderOCRBatch(transactions);
+  document.querySelector("#ocr-submit-button").textContent = isBatch
+    ? `${transactions.length}件を確認して登録`
+    : "確認して登録";
   document.querySelector("#ocr-upload-step").classList.add("hidden");
   document.querySelector("#ocr-review-step").classList.remove("hidden");
 }
@@ -1032,26 +1076,50 @@ document.querySelector("#ocr-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form));
-  state.transactions.push({
+  const isBatchMode = !document.querySelector("#ocr-batch-fields").classList.contains("hidden");
+  const batchItems = [...document.querySelectorAll("#ocr-batch-list .ocr-batch-item")]
+    .filter((item) => item.querySelector(".ocr-batch-include").checked);
+  const entries = isBatchMode
+    ? batchItems.map((item) => ({
+      date: item.querySelector('[data-field="date"]').value,
+      amount: Number(item.querySelector('[data-field="amount"]').value),
+      merchant: item.querySelector('[data-field="merchant"]').value.trim(),
+      paymentMethod: item.querySelector('[data-field="paymentMethod"]').value,
+      category: item.querySelector('[data-field="category"]').value,
+      sourceType: item.dataset.sourceType,
+    }))
+    : [{
+      date: data.date,
+      amount: Number(data.amount),
+      merchant: data.merchant?.trim(),
+      paymentMethod: data.paymentMethod,
+      category: data.category,
+      sourceType: latestOCRResult?.sourceType || data.sourceType,
+    }];
+  if (!entries.length || entries.some((entry) => !entry.date || !entry.amount || !entry.merchant)) {
+    showToast("登録する明細の日付・金額・店名を確認してください");
+    return;
+  }
+  entries.forEach((entry) => state.transactions.push({
     id: id(),
     type: "expense",
-    amount: Number(data.amount),
-    date: data.date,
-    category: data.category,
-    memo: `${data.merchant.trim()}（${data.paymentMethod}）`,
-    paymentMethod: data.paymentMethod,
+    amount: entry.amount,
+    date: entry.date,
+    category: entry.category,
+    memo: `${entry.merchant}（${entry.paymentMethod}）`,
+    paymentMethod: entry.paymentMethod,
     source: "ocr",
     ocr: {
-      provider: latestOCRResult?.provider || "mock",
-      sourceType: latestOCRResult?.sourceType || data.sourceType,
+      provider: latestOCRResult?.provider || "tesseract",
+      sourceType: entry.sourceType,
       rawText: data.rawText.trim(),
     },
-  });
+  }));
   saveState();
   form.closest("dialog").close();
   renderAll();
   switchPage("list");
-  showToast("OCR結果を収支に登録しました");
+  showToast(`OCR結果を${entries.length}件登録しました`);
 });
 
 document.querySelector("#delete-transaction-button").addEventListener("click", () => {

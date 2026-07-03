@@ -1,5 +1,6 @@
 (function createOCRService(global) {
   const DATE_PATTERN = /(20\d{2})[年./-]\s*(\d{1,2})[月./-]\s*(\d{1,2})日?/;
+  const SHORT_DATE_PATTERN = /(?:^|\D)(\d{1,2})[月./-]\s*(\d{1,2})日?/;
   const AMOUNT_LABELS = /(合計|総額|支払|利用金額|決済金額|お会計|請求額|税込)/i;
   const GENERIC_LINES = /(paypay|支払い完了|利用明細|カードご利用|レシート|領収書|取引日時|支払方法|合計|総額)/i;
   const CATEGORY_RULES = [
@@ -28,6 +29,15 @@
     if (!match) return fallback;
     const [, year, month, day] = match;
     return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+
+  function parseFlexibleDate(text, fallback) {
+    const full = parseDate(text, "");
+    if (full) return full;
+    const match = String(text).match(SHORT_DATE_PATTERN);
+    if (!match) return fallback;
+    const fallbackYear = String(fallback || new Date().getFullYear()).slice(0, 4);
+    return `${fallbackYear}-${String(match[1]).padStart(2, "0")}-${String(match[2]).padStart(2, "0")}`;
   }
 
   function amountsInLine(line) {
@@ -69,6 +79,23 @@
     ) || "";
   }
 
+  function merchantFromLine(line) {
+    const cleaned = String(line)
+      .replace(DATE_PATTERN, " ")
+      .replace(SHORT_DATE_PATTERN, " ")
+      .replace(/(?:[¥￥]\s*)?-?\d[\d,\s]{0,11}\s*(?:円|JPY)?/gi, " ")
+      .replace(/(支払い完了|支払|利用金額|決済金額|お会計|請求額|税込|合計|総額)/gi, " ")
+      .replace(/[|:：・–—]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return cleaned.length >= 2
+      && cleaned.length <= 40
+      && /[A-Za-zぁ-んァ-ヶ一-龠]/.test(cleaned)
+      && !GENERIC_LINES.test(cleaned)
+      ? cleaned
+      : "";
+  }
+
   function categoryCandidates(text) {
     const matched = CATEGORY_RULES.filter(([, pattern]) => pattern.test(text)).map(([categoryId]) => categoryId);
     return [...new Set([...matched, "other-expense"])].slice(0, 3).map((categoryId, index) => ({
@@ -90,6 +117,93 @@
     };
   }
 
+  function extractTransactions(rawText, options = {}) {
+    const text = String(rawText || "").trim();
+    const sourceType = parseSourceType(text, options.sourceType);
+    const fallbackDate = options.fallbackDate || "";
+    const base = parseText(text, { sourceType, fallbackDate });
+    if (sourceType === "receipt") return [base];
+
+    const paymentMethod = parsePaymentMethod(text);
+    const records = [];
+    let pendingDate = fallbackDate;
+    let pendingMerchant = "";
+
+    linesOf(text).forEach((line) => {
+      const hasDate = DATE_PATTERN.test(line) || SHORT_DATE_PATTERN.test(line);
+      if (hasDate) pendingDate = parseFlexibleDate(line, pendingDate || fallbackDate);
+
+      const inlineMerchant = merchantFromLine(line);
+      const hasCurrency = /[¥￥円]|JPY/i.test(line);
+      const hasLabel = AMOUNT_LABELS.test(line);
+      const hasGroupedNumber = /\d{1,3}(?:,\d{3})+/.test(line);
+      const hasInlineStatement = hasDate && Boolean(inlineMerchant) && /\d{2,8}\s*$/.test(line);
+      const amountSignal = hasCurrency || hasLabel || hasGroupedNumber || hasInlineStatement;
+
+      if (!amountSignal && inlineMerchant) {
+        pendingMerchant = inlineMerchant;
+        return;
+      }
+      if (!amountSignal) return;
+
+      const amounts = amountsInLine(line);
+      if (!amounts.length) return;
+      const amount = Math.max(...amounts);
+      const merchant = inlineMerchant || pendingMerchant;
+      if (!merchant || !pendingDate) return;
+
+      records.push({
+        sourceType,
+        date: pendingDate,
+        amount,
+        merchant,
+        paymentMethod,
+        categoryCandidates: categoryCandidates(merchant),
+      });
+      pendingMerchant = "";
+    });
+
+    const unique = records.filter((record, index, items) =>
+      items.findIndex((item) =>
+        item.date === record.date && item.amount === record.amount && item.merchant === record.merchant,
+      ) === index,
+    );
+    return unique.length > 1 ? unique : [base];
+  }
+
+  function preprocessImage(file) {
+    return new Promise((resolve) => {
+      const image = new Image();
+      const url = URL.createObjectURL(file);
+      image.onload = () => {
+        const scale = Math.min(3, 2200 / image.naturalWidth);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+        for (let index = 0; index < pixels.data.length; index += 4) {
+          const gray = pixels.data[index] * 0.299 + pixels.data[index + 1] * 0.587 + pixels.data[index + 2] * 0.114;
+          const enhanced = Math.max(0, Math.min(255, (gray - 128) * 1.35 + 128));
+          pixels.data[index] = enhanced;
+          pixels.data[index + 1] = enhanced;
+          pixels.data[index + 2] = enhanced;
+        }
+        context.putImageData(pixels, 0, 0);
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(url);
+          resolve(blob || file);
+        }, "image/png");
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(file);
+      };
+      image.src = url;
+    });
+  }
+
   async function analyze(file, options = {}) {
     if (!(file instanceof File)) throw new Error("画像ファイルを選択してください");
     if (!file.type.startsWith("image/")) throw new Error("画像形式のファイルを選択してください");
@@ -102,12 +216,23 @@
           if (message.status === "recognizing text") options.onProgress?.(message.progress || 0);
         },
       });
-      const { data } = await worker.recognize(file);
+      await worker.setParameters({
+        tessedit_pageseg_mode: options.sourceType === "receipt" ? "6" : "11",
+        preserve_interword_spaces: "1",
+        user_defined_dpi: "300",
+      });
+      const processedImage = await preprocessImage(file);
+      const { data } = await worker.recognize(processedImage);
       if (!data.text?.trim()) throw new Error("文字を読み取れませんでした。鮮明な画像で再試行してください");
+      const parsed = parseText(data.text, { sourceType: options.sourceType, fallbackDate: localDate(file) });
       return {
         provider: "tesseract",
         confidence: Number(data.confidence) || 0,
-        ...parseText(data.text, { sourceType: options.sourceType, fallbackDate: localDate(file) }),
+        ...parsed,
+        transactions: extractTransactions(data.text, {
+          sourceType: options.sourceType,
+          fallbackDate: localDate(file),
+        }),
       };
     } catch (error) {
       if (error?.message?.includes("文字を読み取れません")) throw error;
@@ -117,5 +242,5 @@
     }
   }
 
-  global.OCRService = Object.freeze({ analyze, parseText, provider: "tesseract" });
+  global.OCRService = Object.freeze({ analyze, parseText, extractTransactions, provider: "tesseract" });
 })(window);

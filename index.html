@@ -184,26 +184,32 @@
           <label class="field">抽出テキスト
             <textarea name="rawText" rows="4" required></textarea>
           </label>
-          <div class="ocr-field-grid">
-            <label class="field">日付<input name="date" type="date" required /></label>
-            <label class="field">金額<input name="amount" type="number" min="1" inputmode="numeric" required /></label>
+          <div id="ocr-single-fields">
+            <div class="ocr-field-grid">
+              <label class="field">日付<input name="date" type="date" required /></label>
+              <label class="field">金額<input name="amount" type="number" min="1" inputmode="numeric" required /></label>
+            </div>
+            <label class="field">店名<input name="merchant" maxlength="50" required /></label>
+            <label class="field">支払い方法
+              <select name="paymentMethod" required>
+                <option value="PayPay">PayPay</option>
+                <option value="クレジットカード">クレジットカード</option>
+                <option value="現金">現金</option>
+                <option value="その他">その他</option>
+              </select>
+            </label>
+            <label class="field">カテゴリ候補
+              <select name="category" required></select>
+              <span class="field-hint" id="ocr-category-hint"></span>
+            </label>
           </div>
-          <label class="field">店名<input name="merchant" maxlength="50" required /></label>
-          <label class="field">支払い方法
-            <select name="paymentMethod" required>
-              <option value="PayPay">PayPay</option>
-              <option value="クレジットカード">クレジットカード</option>
-              <option value="現金">現金</option>
-              <option value="その他">その他</option>
-            </select>
-          </label>
-          <label class="field">カテゴリ候補
-            <select name="category" required></select>
-            <span class="field-hint" id="ocr-category-hint"></span>
-          </label>
+          <section id="ocr-batch-fields" class="hidden">
+            <div class="ocr-batch-head"><strong id="ocr-batch-count"></strong><span>不要な明細はチェックを外せます</span></div>
+            <div id="ocr-batch-list"></div>
+          </section>
           <div class="dialog-actions">
             <button type="button" class="text-button" id="ocr-back-button">画像を選び直す</button>
-            <button type="submit" class="primary-button">確認して登録</button>
+            <button type="submit" class="primary-button" id="ocr-submit-button">確認して登録</button>
           </div>
         </section>
       </form>
