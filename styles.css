@@ -81,6 +81,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   font-family: Georgia, serif;
   font-size: 23px;
 }
+.loader-mark { padding: 0; object-fit: cover; }
 .loader-copy { display: grid; align-self: end; }
 .loader-copy strong { font-size: 13px; letter-spacing: -.02em; }
 .loader-copy span { color: var(--muted); font-size: 9px; }

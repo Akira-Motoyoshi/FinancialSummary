@@ -17,6 +17,8 @@ test("PWA metadata and app entry points are present", async () => {
   assert.match(html, /id="savings-goal-form"/);
   assert.match(html, /data-action="record-subscription"/);
   assert.equal(manifest.display, "standalone");
+  assert.equal(manifest.name, "貯金ザウルス");
+  assert.equal(manifest.short_name, "貯金ザウルス");
   assert.equal(manifest.start_url, "./");
   assert.equal(manifest.scope, "./");
   assert.ok(manifest.icons.some((icon) => icon.sizes === "192x192"));

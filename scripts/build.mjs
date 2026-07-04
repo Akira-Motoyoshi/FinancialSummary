@@ -10,6 +10,7 @@ const assets = [
   "manifest.webmanifest",
   "sw.js",
   "icon.svg",
+  "icon-180.png",
   "icon-192.png",
   "icon-512.png",
   "vendor/tesseract.min.js",

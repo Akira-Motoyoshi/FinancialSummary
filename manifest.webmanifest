@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "こつこつ家計簿",
-  "short_name": "こつこつ",
-  "description": "収支・予算・貯金をシンプルに管理する家計簿",
+  "name": "貯金ザウルス",
+  "short_name": "貯金ザウルス",
+  "description": "収支・予算・目標貯金を楽しく管理する家計簿PWA",
   "lang": "ja",
   "start_url": "./",
   "scope": "./",

@@ -1,4 +1,4 @@
-# FinancialSummary
+# 貯金ザウルス
 
 水色基調のLiquid Glass UIで、収支・固定費・予算・貯金目標・分析を管理するローカルファーストPWAです。
 

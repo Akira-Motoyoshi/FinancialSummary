@@ -1,4 +1,4 @@
-const CACHE_NAME = "kotsukotsu-kakeibo-v11";
+const CACHE_NAME = "kotsukotsu-kakeibo-v12";
 const APP_ASSETS = [
   "./",
   "./index.html",
@@ -8,6 +8,7 @@ const APP_ASSETS = [
   "./insights-service.js",
   "./prompt-templates.js",
   "./manifest.webmanifest",
+  "./icon-180.png",
   "./icon-192.png",
   "./icon-512.png",
   "./vendor/tesseract.min.js",
