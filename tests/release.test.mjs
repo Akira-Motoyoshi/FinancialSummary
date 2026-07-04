@@ -15,6 +15,7 @@ test("PWA metadata and app entry points are present", async () => {
   assert.match(html, /id="transaction-form"/);
   assert.match(html, /id="ocr-form"/);
   assert.match(html, /id="savings-goal-form"/);
+  assert.match(html, /data-action="record-subscription"/);
   assert.equal(manifest.display, "standalone");
   assert.equal(manifest.start_url, "./");
   assert.equal(manifest.scope, "./");

@@ -673,17 +673,32 @@ function renderAll() {
 }
 
 function switchPage(pageName) {
-  currentPage = pageName;
-  document.querySelectorAll(".page").forEach((page) => page.classList.toggle("active", page.dataset.page === pageName));
-  document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.target === pageName));
-  const titles = {
-    home: ["MY FINANCE", "ホーム"], savings: ["SAVINGS", "貯金"], list: ["TRANSACTIONS", "収支履歴"],
-    recurring: ["RECURRING", "固定費"], analysis: ["INSIGHTS", "分析"], budget: ["PLANNING", "予算と貯金"],
-    settings: ["PREFERENCES", "設定"],
+  const previousPage = currentPage;
+  const applyPageChange = () => {
+    currentPage = pageName;
+    document.querySelectorAll(".page").forEach((page) => page.classList.toggle("active", page.dataset.page === pageName));
+    document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.target === pageName));
+    const titles = {
+      home: ["MY FINANCE", "ホーム"], savings: ["SAVINGS", "貯金"], list: ["TRANSACTIONS", "収支履歴"],
+      recurring: ["RECURRING", "固定費"], analysis: ["INSIGHTS", "分析"], budget: ["PLANNING", "予算と貯金"],
+      settings: ["PREFERENCES", "設定"],
+    };
+    document.querySelector("#page-eyebrow").textContent = titles[pageName]?.[0] || "MY FINANCE";
+    document.querySelector("#page-title").textContent = titles[pageName]?.[1] || "ホーム";
+    window.scrollTo({ top: 0, behavior: previousPage === pageName ? "auto" : "smooth" });
   };
-  document.querySelector("#page-eyebrow").textContent = titles[pageName]?.[0] || "MY FINANCE";
-  document.querySelector("#page-title").textContent = titles[pageName]?.[1] || "ホーム";
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (previousPage === pageName) {
+    applyPageChange();
+  } else if (document.startViewTransition) {
+    document.startViewTransition(applyPageChange);
+  } else {
+    const activePage = document.querySelector(".page.active");
+    activePage?.classList.add("page-exit");
+    window.setTimeout(() => {
+      activePage?.classList.remove("page-exit");
+      applyPageChange();
+    }, 140);
+  }
 }
 
 function setCategoryOptions(select, type, selected) {
@@ -745,7 +760,7 @@ function openSavingsGoal(goalId) {
   dialog.showModal();
 }
 
-function openRecurring(ruleId) {
+function openRecurring(ruleId, options = {}) {
   const dialog = document.querySelector("#recurring-dialog");
   const form = document.querySelector("#recurring-form");
   const rule = state.recurring.find((item) => item.id === ruleId);
@@ -757,8 +772,11 @@ function openRecurring(ruleId) {
   form.elements.amount.value = rule?.amount || "";
   form.elements.day.value = rule?.day || 1;
   form.elements.active.checked = rule ? rule.active : true;
-  setCategoryOptions(form.elements.category, type, rule?.category);
-  document.querySelector("#recurring-dialog-title").textContent = rule ? "固定費を編集" : "固定費を追加";
+  setCategoryOptions(form.elements.category, type, rule?.category || (options.subscription ? "entertainment" : ""));
+  form.elements.name.placeholder = options.subscription ? "例：Netflix" : "例：家賃";
+  document.querySelector("#recurring-dialog-title").textContent = rule
+    ? "固定費を編集"
+    : options.subscription ? "サブスクを追加" : "固定費を追加";
   document.querySelector("#delete-recurring-button").classList.toggle("hidden", !rule);
   dialog.showModal();
 }
@@ -893,6 +911,19 @@ function escapeHtml(value = "") {
   })[character]);
 }
 
+function closeDialogSmooth(dialog, afterClose) {
+  if (!dialog?.open) {
+    afterClose?.();
+    return;
+  }
+  dialog.classList.add("dialog-closing");
+  window.setTimeout(() => {
+    dialog.close();
+    dialog.classList.remove("dialog-closing");
+    afterClose?.();
+  }, 170);
+}
+
 document.querySelectorAll(".nav-item").forEach((button) => {
   if (button.dataset.target) button.addEventListener("click", () => switchPage(button.dataset.target));
 });
@@ -911,12 +942,13 @@ document.addEventListener("click", (event) => {
   if (action === "go-settings") switchPage("settings");
   if (action === "open-record-sheet") document.querySelector("#record-action-dialog").showModal();
   if (action === "record-manual") {
-    document.querySelector("#record-action-dialog").close();
-    openTransaction();
+    closeDialogSmooth(document.querySelector("#record-action-dialog"), () => openTransaction());
   }
   if (action === "record-ocr") {
-    document.querySelector("#record-action-dialog").close();
-    openOCRDialog(true);
+    closeDialogSmooth(document.querySelector("#record-action-dialog"), () => openOCRDialog(true));
+  }
+  if (action === "record-subscription") {
+    closeDialogSmooth(document.querySelector("#record-action-dialog"), () => openRecurring(undefined, { subscription: true }));
   }
   if (action === "edit-transaction") openTransaction(itemId);
   if (action === "add-savings-goal") openSavingsGoal();
@@ -954,7 +986,7 @@ document.addEventListener("change", (event) => {
 });
 
 document.querySelectorAll(".close-dialog").forEach((button) => {
-  button.addEventListener("click", () => button.closest("dialog").close());
+  button.addEventListener("click", () => closeDialogSmooth(button.closest("dialog")));
 });
 
 document.querySelector("#ocr-file").addEventListener("change", async (event) => {

@@ -1,4 +1,4 @@
-const CACHE_NAME = "kotsukotsu-kakeibo-v10";
+const CACHE_NAME = "kotsukotsu-kakeibo-v11";
 const APP_ASSETS = [
   "./",
   "./index.html",
