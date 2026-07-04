@@ -1,4 +1,4 @@
-const STORAGE_KEY = "kotsukotsu-kakeibo-phase1-v1";
+const STORAGE_KEY = "chokin-zaurus-v2";
 
 const CATEGORIES = [
   { id: "salary", name: "給与", type: "income", icon: "¥", color: "#62ad88" },
@@ -39,50 +39,15 @@ function dateInMonth(month, day) {
 }
 
 function makeInitialState() {
-  const current = monthKey();
-  const previous = offsetMonth(-1);
-  const twoAgo = offsetMonth(-2);
-  const threeAgo = offsetMonth(-3);
-  const fourAgo = offsetMonth(-4);
-  const fiveAgo = offsetMonth(-5);
-  const transactions = [
-    { id: id(), type: "income", amount: 280000, date: dateInMonth(current, 1), category: "salary", memo: "給与", source: "manual" },
-    { id: id(), type: "expense", amount: 4280, date: dateInMonth(current, 2), category: "food", memo: "スーパー", source: "manual" },
-    { id: id(), type: "expense", amount: 680, date: dateInMonth(current, 2), category: "transport", memo: "電車", source: "manual" },
-    { id: id(), type: "expense", amount: 2300, date: dateInMonth(current, 3), category: "entertainment", memo: "映画", source: "manual" },
-  ];
-
-  [
-    [previous, 275000, 188000],
-    [twoAgo, 275000, 201000],
-    [threeAgo, 268000, 194000],
-    [fourAgo, 268000, 213000],
-    [fiveAgo, 265000, 186000],
-  ].forEach(([month, income, expense]) => {
-    transactions.push(
-      { id: id(), type: "income", amount: income, date: dateInMonth(month, 25), category: "salary", memo: "給与", source: "manual" },
-      { id: id(), type: "expense", amount: Math.round(expense * 0.48), date: dateInMonth(month, 1), category: "housing", memo: "家賃", source: "manual" },
-      { id: id(), type: "expense", amount: Math.round(expense * 0.23), date: dateInMonth(month, 9), category: "food", memo: "食費まとめ", source: "manual" },
-      { id: id(), type: "expense", amount: Math.round(expense * 0.12), date: dateInMonth(month, 15), category: "utilities", memo: "水道光熱費", source: "manual" },
-      { id: id(), type: "expense", amount: Math.round(expense * 0.17), date: dateInMonth(month, 20), category: "entertainment", memo: "娯楽など", source: "manual" },
-    );
-  });
-
   return {
-    transactions,
-    recurring: [
-      { id: id(), type: "expense", name: "家賃", amount: 82000, day: 1, category: "housing", active: true },
-      { id: id(), type: "expense", name: "動画配信", amount: 1490, day: 10, category: "entertainment", active: true },
-      { id: id(), type: "expense", name: "スマホ料金", amount: 6800, day: 20, category: "communication", active: true },
-    ],
+    transactions: [],
+    recurring: [],
     budgets: {
-      monthly: 210000,
-      categories: { food: 45000, entertainment: 20000, transport: 15000 },
+      monthly: 0,
+      categories: {},
     },
-    savings: { enabled: true, mode: "fixed", value: 50000 },
-    savingsGoals: [
-      { id: id(), name: "生活防衛資金", targetAmount: 300000, currentAmount: 110000, deadline: dateInMonth(offsetMonth(6), 28) },
-    ],
+    savings: { enabled: false, mode: "fixed", value: 0 },
+    savingsGoals: [],
   };
 }
 
@@ -105,9 +70,7 @@ function loadState() {
       value: Number.isFinite(Number(saved.savings?.value)) ? Number(saved.savings.value) : defaults.savings.value,
     };
     if (!Array.isArray(saved.savingsGoals)) {
-      saved.savingsGoals = [
-        { id: id(), name: "生活防衛資金", targetAmount: 300000, currentAmount: Number(saved.savings?.value) || 0, deadline: "" },
-      ];
+      saved.savingsGoals = [];
     }
     return saved;
   } catch {
@@ -658,7 +621,7 @@ function renderSettings() {
       `)}
       <div class="settings-list">${items.map(([action, icon, title, note]) => `
         <button class="glass-card settings-link" data-action="${action}"><span class="settings-symbol">${icon}</span><span><strong>${title}</strong><small>${note}</small></span><i>›</i></button>`).join("")}</div>
-      <button class="glass-card settings-link danger-link" data-action="reset-demo"><span class="settings-symbol">↻</span><span><strong>デモデータをリセット</strong><small>入力内容を初期状態に戻します</small></span><i>›</i></button>
+      <button class="glass-card settings-link danger-link" data-action="reset-data"><span class="settings-symbol">↻</span><span><strong>すべてのデータを消去</strong><small>収支・固定費・予算・目標を空にします</small></span><i>›</i></button>
     </div>`;
 }
 
@@ -969,11 +932,11 @@ document.addEventListener("click", (event) => {
     };
     saveState(); renderAll(); switchPage("budget"); showToast("貯金設定を保存しました");
   }
-  if (action === "reset-demo") {
-    if (!window.confirm("入力内容を消して、ダミーデータに戻しますか？")) return;
+  if (action === "reset-data") {
+    if (!window.confirm("入力したすべてのデータを消去しますか？この操作は元に戻せません。")) return;
     state = makeInitialState();
-    runRecurring();
-    saveState(); renderAll(); switchPage("home"); showToast("ダミーデータに戻しました");
+    saveState(); renderAll(); switchPage("home");
+    showToast("すべてのデータを消去しました");
   }
 });
 

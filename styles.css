@@ -940,7 +940,7 @@ dialog form { display: grid; gap: 16px; padding: 22px; }
   color: white;
   font-size: 11px;
 }
-.mock-badge {
+.ocr-badge {
   border-radius: 99px;
   background: var(--green-soft);
   padding: 4px 7px;
@@ -1504,6 +1504,61 @@ dialog form > * { position: relative; }
   .home-card-grid .glass-card { min-height: 0; }
   .hero-stats { gap: 7px 10px; }
   .balance-strip strong { font-size: 13px; }
+}
+
+/* Keep long labels and currency values inside their cards on small phones. */
+.home-layout,
+.home-card-grid,
+.home-card-grid > *,
+.glass-card,
+.section-head > *,
+.row-main {
+  min-width: 0;
+}
+.home-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.hero-value,
+.card-big-number,
+.goal-figures strong,
+.forecast-value {
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.balance-strip > div { min-width: 0; }
+.balance-strip strong {
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+.dialog-head h2,
+.ocr-result-head,
+.ocr-batch-head,
+.settings-link strong,
+.settings-link small {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 420px) {
+  .home-card-grid { grid-template-columns: minmax(0, 1fr); }
+  .home-card-grid .glass-card { min-height: 0; }
+  .mini-donut-row { grid-template-columns: 78px minmax(0, 1fr); }
+}
+
+@media (max-width: 340px) {
+  .page { padding-right: 12px; padding-left: 12px; }
+  .glass-card { padding: 16px; }
+  .hero { padding: 20px; }
+  .hero-value { font-size: clamp(30px, 12vw, 38px); }
+  .hero-stats { display: grid; grid-template-columns: 1fr; }
+  .balance-strip { grid-template-columns: 1fr; gap: 10px; }
+  .balance-strip > div,
+  .balance-strip > div:first-child {
+    grid-template-columns: 58px minmax(0, 1fr);
+    align-items: baseline;
+    padding: 0;
+    border: 0;
+  }
+  .balance-strip strong { text-align: right; }
+  .settings-link { grid-template-columns: 38px minmax(0, 1fr) auto; gap: 10px; }
+  .settings-symbol { width: 38px; height: 38px; }
 }
 
 @media (min-width: 480px) {

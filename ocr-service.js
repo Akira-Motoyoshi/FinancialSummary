@@ -2,7 +2,9 @@
   const DATE_PATTERN = /(20\d{2})[年./-]\s*(\d{1,2})[月./-]\s*(\d{1,2})日?/;
   const SHORT_DATE_PATTERN = /(?:^|\D)(\d{1,2})[月./-]\s*(\d{1,2})日?/;
   const AMOUNT_LABELS = /(合計|総額|支払|利用金額|決済金額|お会計|請求額|税込)/i;
-  const GENERIC_LINES = /(paypay|支払い完了|利用明細|カードご利用|レシート|領収書|取引日時|支払方法|合計|総額)/i;
+  const GENERIC_LINES = /(paypay|支払い完了|利用明細|カードご利用|レシート|領収書|取引日時|支払方法|合計|総額|小計|消費税|お預り|お釣り)/i;
+  const MERCHANT_NOISE = /(tel|fax|https?|www\.|登録番号|伝票|レジ|担当|店舗番号|会員|ポイント|バーコード|no[.:：\s]*\d)/i;
+  const SEPARATOR_ONLY = /^[\s|｜¦_\-―—–=+*.:：,，;；'"`~^…·•□■◇◆○●◎△▽▲▼]+$/u;
   const CATEGORY_RULES = [
     ["food", /(スーパー|コンビニ|セブン|ファミマ|ローソン|カフェ|レストラン|食料|飲食|マート)/i],
     ["daily", /(amazon|ドラッグ|薬局|日用品|ホームセンター|無印)/i],
@@ -20,15 +22,40 @@
     return new Date(date.getTime() - offset).toISOString().slice(0, 10);
   }
 
+  function cleanOCRText(text) {
+    return String(text || "")
+      .normalize("NFKC")
+      .split(/\r?\n/)
+      .map((line) => line
+        .replace(/[|｜¦]{2,}/g, " ")
+        .replace(/^[|｜¦:：;；_\-―—–=+*.,，\s]+|[|｜¦:：;；_\-―—–=+*.,，\s]+$/g, "")
+        .replace(/(\d)[Oo](?=\d)/g, "$10")
+        .replace(/\s+/g, " ")
+        .trim())
+      .filter((line) => {
+        if (!line || SEPARATOR_ONLY.test(line) || /(.)\1{5,}/u.test(line)) return false;
+        const meaningful = (line.match(/[A-Za-z0-9ぁ-んァ-ヶ一-龠¥￥]/gu) || []).length;
+        const symbols = (line.match(/[^\sA-Za-z0-9ぁ-んァ-ヶ一-龠¥￥]/gu) || []).length;
+        return meaningful >= 2 && symbols <= Math.max(meaningful * 1.5, 8);
+      })
+      .join("\n");
+  }
+
   function linesOf(text) {
-    return String(text || "").split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim()).filter(Boolean);
+    return cleanOCRText(text).split("\n").filter(Boolean);
   }
 
   function parseDate(text, fallback) {
     const match = String(text).match(DATE_PATTERN);
     if (!match) return fallback;
     const [, year, month, day] = match;
-    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const candidate = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const parsed = new Date(`${candidate}T12:00:00`);
+    return parsed.getFullYear() === Number(year)
+      && parsed.getMonth() + 1 === Number(month)
+      && parsed.getDate() === Number(day)
+      ? candidate
+      : fallback;
   }
 
   function parseFlexibleDate(text, fallback) {
@@ -37,11 +64,15 @@
     const match = String(text).match(SHORT_DATE_PATTERN);
     if (!match) return fallback;
     const fallbackYear = String(fallback || new Date().getFullYear()).slice(0, 4);
-    return `${fallbackYear}-${String(match[1]).padStart(2, "0")}-${String(match[2]).padStart(2, "0")}`;
+    return parseDate(`${fallbackYear}-${match[1]}-${match[2]}`, fallback);
   }
 
   function amountsInLine(line) {
-    return [...line.matchAll(/(?:[¥￥]\s*)?(\d[\d,\s]{0,11})\s*(?:円|JPY)?/gi)]
+    const amountText = String(line)
+      .replace(DATE_PATTERN, " ")
+      .replace(SHORT_DATE_PATTERN, " ")
+      .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, " ");
+    return [...amountText.matchAll(/(?:[¥￥]\s*)?(\d[\d,\s]{0,11})\s*(?:円|JPY)?/gi)]
       .map((match) => Number(match[1].replace(/[,\s]/g, "")))
       .filter((amount) => Number.isFinite(amount) && amount > 0 && amount < 100000000 && !(amount >= 1900 && amount <= 2100));
   }
@@ -69,14 +100,17 @@
   }
 
   function parseMerchant(text) {
-    return linesOf(text).find((line) =>
-      line.length >= 2
-      && line.length <= 40
-      && !GENERIC_LINES.test(line)
-      && !DATE_PATTERN.test(line)
-      && !/[¥￥]\s*\d|\d+\s*円/.test(line)
-      && !/^\d[\d\s./:-]+$/.test(line),
-    ) || "";
+    const candidates = linesOf(text)
+      .map((line, index) => ({ line: merchantFromLine(line), index }))
+      .filter(({ line }) => line);
+    candidates.sort((a, b) => {
+      const score = ({ line, index }) =>
+        (CATEGORY_RULES.some(([, pattern]) => pattern.test(line)) ? 8 : 0)
+        + (/[ぁ-んァ-ヶ一-龠]/u.test(line) ? 3 : 0)
+        - index * 0.2;
+      return score(b) - score(a);
+    });
+    return candidates[0]?.line || "";
   }
 
   function merchantFromLine(line) {
@@ -92,6 +126,8 @@
       && cleaned.length <= 40
       && /[A-Za-zぁ-んァ-ヶ一-龠]/.test(cleaned)
       && !GENERIC_LINES.test(cleaned)
+      && !MERCHANT_NOISE.test(cleaned)
+      && !/^\d|[¥￥]\s*\d|\d+\s*円/u.test(cleaned)
       ? cleaned
       : "";
   }
@@ -105,11 +141,11 @@
   }
 
   function parseText(rawText, options = {}) {
-    const text = String(rawText || "").trim();
+    const text = cleanOCRText(rawText);
     return {
       sourceType: parseSourceType(text, options.sourceType),
       rawText: text,
-      date: parseDate(text, options.fallbackDate || ""),
+      date: parseFlexibleDate(text, options.fallbackDate || ""),
       amount: parseAmount(text),
       merchant: parseMerchant(text),
       paymentMethod: parsePaymentMethod(text),
@@ -118,7 +154,7 @@
   }
 
   function extractTransactions(rawText, options = {}) {
-    const text = String(rawText || "").trim();
+    const text = cleanOCRText(rawText);
     const sourceType = parseSourceType(text, options.sourceType);
     const fallbackDate = options.fallbackDate || "";
     const base = parseText(text, { sourceType, fallbackDate });
@@ -171,25 +207,104 @@
     return unique.length > 1 ? unique : [base];
   }
 
+  function otsuThreshold(grayValues) {
+    const histogram = new Array(256).fill(0);
+    grayValues.forEach((value) => { histogram[value] += 1; });
+    const total = grayValues.length;
+    let totalSum = 0;
+    histogram.forEach((count, value) => { totalSum += value * count; });
+    let backgroundWeight = 0;
+    let backgroundSum = 0;
+    let bestVariance = -1;
+    let threshold = 170;
+    for (let value = 0; value < 256; value += 1) {
+      backgroundWeight += histogram[value];
+      if (!backgroundWeight) continue;
+      const foregroundWeight = total - backgroundWeight;
+      if (!foregroundWeight) break;
+      backgroundSum += value * histogram[value];
+      const backgroundMean = backgroundSum / backgroundWeight;
+      const foregroundMean = (totalSum - backgroundSum) / foregroundWeight;
+      const variance = backgroundWeight * foregroundWeight * (backgroundMean - foregroundMean) ** 2;
+      if (variance > bestVariance) {
+        bestVariance = variance;
+        threshold = value;
+      }
+    }
+    return Math.max(105, Math.min(215, threshold + 12));
+  }
+
+  function removeLongRules(data, width, height) {
+    const isDark = (x, y) => data[(y * width + x) * 4] < 80;
+    const clear = (x, y) => {
+      for (let offset = -1; offset <= 1; offset += 1) {
+        const row = y + offset;
+        if (row < 0 || row >= height) continue;
+        const pixel = (row * width + x) * 4;
+        data[pixel] = 255;
+        data[pixel + 1] = 255;
+        data[pixel + 2] = 255;
+      }
+    };
+    const horizontalMinimum = Math.max(90, Math.round(width * 0.32));
+    for (let y = 0; y < height; y += 1) {
+      let start = -1;
+      for (let x = 0; x <= width; x += 1) {
+        if (x < width && isDark(x, y)) {
+          if (start < 0) start = x;
+        } else if (start >= 0) {
+          if (x - start >= horizontalMinimum) {
+            for (let clearX = start; clearX < x; clearX += 1) clear(clearX, y);
+          }
+          start = -1;
+        }
+      }
+    }
+
+    const verticalMinimum = Math.max(120, Math.round(height * 0.24));
+    for (let x = 0; x < width; x += 1) {
+      let start = -1;
+      for (let y = 0; y <= height; y += 1) {
+        if (y < height && isDark(x, y)) {
+          if (start < 0) start = y;
+        } else if (start >= 0) {
+          if (y - start >= verticalMinimum) {
+            for (let clearY = start; clearY < y; clearY += 1) clear(x, clearY);
+          }
+          start = -1;
+        }
+      }
+    }
+  }
+
   function preprocessImage(file) {
     return new Promise((resolve) => {
       const image = new Image();
       const url = URL.createObjectURL(file);
       image.onload = () => {
-        const scale = Math.min(3, 2200 / image.naturalWidth);
+        const scale = Math.min(3, 2600 / image.naturalWidth);
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
         canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
         const context = canvas.getContext("2d", { willReadFrequently: true });
+        context.imageSmoothingEnabled = true;
+        context.imageSmoothingQuality = "high";
         context.drawImage(image, 0, 0, canvas.width, canvas.height);
         const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+        const grays = new Uint8Array(canvas.width * canvas.height);
         for (let index = 0; index < pixels.data.length; index += 4) {
           const gray = pixels.data[index] * 0.299 + pixels.data[index + 1] * 0.587 + pixels.data[index + 2] * 0.114;
-          const enhanced = Math.max(0, Math.min(255, (gray - 128) * 1.35 + 128));
-          pixels.data[index] = enhanced;
-          pixels.data[index + 1] = enhanced;
-          pixels.data[index + 2] = enhanced;
+          grays[index / 4] = Math.round(gray);
         }
+        const threshold = otsuThreshold(grays);
+        for (let index = 0; index < pixels.data.length; index += 4) {
+          const binary = grays[index / 4] < threshold ? 0 : 255;
+          pixels.data[index] = binary;
+          pixels.data[index + 1] = binary;
+          pixels.data[index + 2] = binary;
+          pixels.data[index + 3] = 255;
+        }
+        removeLongRules(pixels.data, canvas.width, canvas.height);
         context.putImageData(pixels, 0, 0);
         canvas.toBlob((blob) => {
           URL.revokeObjectURL(url);
@@ -202,6 +317,14 @@
       };
       image.src = url;
     });
+  }
+
+  function resultScore(result) {
+    const parsed = parseText(result.data.text, { fallbackDate: "" });
+    return (Number(result.data.confidence) || 0)
+      + (parsed.amount ? 24 : 0)
+      + (parsed.date ? 14 : 0)
+      + (parsed.merchant ? 14 : 0);
   }
 
   async function analyze(file, options = {}) {
@@ -222,14 +345,26 @@
         user_defined_dpi: "300",
       });
       const processedImage = await preprocessImage(file);
-      const { data } = await worker.recognize(processedImage);
+      let recognition = await worker.recognize(processedImage);
+      const firstParsed = parseText(recognition.data.text, {
+        sourceType: options.sourceType,
+        fallbackDate: localDate(file),
+      });
+      if ((Number(recognition.data.confidence) || 0) < 58 || !firstParsed.amount || !firstParsed.merchant) {
+        options.onProgress?.(0);
+        const originalRecognition = await worker.recognize(file);
+        if (resultScore(originalRecognition) > resultScore(recognition)) recognition = originalRecognition;
+      }
+      const { data } = recognition;
       if (!data.text?.trim()) throw new Error("文字を読み取れませんでした。鮮明な画像で再試行してください");
-      const parsed = parseText(data.text, { sourceType: options.sourceType, fallbackDate: localDate(file) });
+      const cleanedText = cleanOCRText(data.text);
+      if (!cleanedText) throw new Error("文字を読み取れませんでした。鮮明な画像で再試行してください");
+      const parsed = parseText(cleanedText, { sourceType: options.sourceType, fallbackDate: localDate(file) });
       return {
         provider: "tesseract",
         confidence: Number(data.confidence) || 0,
         ...parsed,
-        transactions: extractTransactions(data.text, {
+        transactions: extractTransactions(cleanedText, {
           sourceType: options.sourceType,
           fallbackDate: localDate(file),
         }),
@@ -242,5 +377,11 @@
     }
   }
 
-  global.OCRService = Object.freeze({ analyze, parseText, extractTransactions, provider: "tesseract" });
+  global.OCRService = Object.freeze({
+    analyze,
+    parseText,
+    extractTransactions,
+    cleanOCRText,
+    provider: "tesseract",
+  });
 })(window);

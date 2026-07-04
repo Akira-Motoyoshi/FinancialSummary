@@ -38,6 +38,19 @@ test("all PWA assets referenced by the manifest exist", async () => {
   await Promise.all(manifest.icons.map((icon) => readFile(new URL(`..\/${icon.src.replace("./", "")}`, import.meta.url))));
 });
 
+test("a fresh install starts empty and can be safely handed to another person", async () => {
+  const app = await read("app.js");
+
+  assert.match(app, /const STORAGE_KEY = "chokin-zaurus-v2"/);
+  assert.match(app, /transactions: \[\]/);
+  assert.match(app, /recurring: \[\]/);
+  assert.match(app, /monthly: 0/);
+  assert.match(app, /savings: \{ enabled: false, mode: "fixed", value: 0 \}/);
+  assert.match(app, /savingsGoals: \[\]/);
+  assert.match(app, /すべてのデータを消去/);
+  assert.doesNotMatch(app, /280000|210000|生活防衛資金|動画配信|スマホ料金/);
+});
+
 test("OCR uses a real browser engine instead of fixed mock profiles", async () => {
   const [html, service] = await Promise.all([read("index.html"), read("ocr-service.js")]);
   assert.match(html, /\.\/vendor\/tesseract\.min\.js/);
@@ -69,4 +82,29 @@ test("OCR uses a real browser engine instead of fixed mock profiles", async () =
       { date: "2026-07-02", amount: 550, merchant: "スターバックス" },
     ]),
   );
+
+  const noisyText = [
+    "||||||||||||||||||||",
+    "--------------------",
+    "レシート",
+    "株式会社サンプルマート",
+    "TEL 03-1234-5678",
+    "2026/07/04 19:42",
+    "商品A 198円",
+    "====================",
+    "合計 ￥1,198",
+  ].join("\n");
+  const cleaned = context.window.OCRService.cleanOCRText(noisyText);
+  const noisyParsed = context.window.OCRService.parseText(noisyText, { fallbackDate: "2026-07-04" });
+  assert.doesNotMatch(cleaned, /[|=]{4}|-{4}/);
+  assert.equal(noisyParsed.date, "2026-07-04");
+  assert.equal(noisyParsed.amount, 1198);
+  assert.equal(noisyParsed.merchant, "株式会社サンプルマート");
+
+  const invalidNumbers = context.window.OCRService.parseText(
+    "サンプルストア\n取引日時 2026/99/42 19:42\n合計",
+    { fallbackDate: "2026-07-04" },
+  );
+  assert.equal(invalidNumbers.date, "2026-07-04");
+  assert.equal(invalidNumbers.amount, 0);
 });
