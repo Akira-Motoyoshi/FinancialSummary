@@ -6,6 +6,7 @@ const assets = [
   "app.js",
   "ocr-service.js",
   "insights-service.js",
+  "ledger-service.js",
   "prompt-templates.js",
   "manifest.webmanifest",
   "sw.js",

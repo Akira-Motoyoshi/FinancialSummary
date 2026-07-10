@@ -48,6 +48,7 @@ function makeInitialState() {
     },
     savings: { enabled: false, mode: "fixed", value: 0 },
     savingsGoals: [],
+    merchantAliases: {},
   };
 }
 
@@ -72,6 +73,9 @@ function loadState() {
     if (!Array.isArray(saved.savingsGoals)) {
       saved.savingsGoals = [];
     }
+    saved.merchantAliases = saved.merchantAliases && typeof saved.merchantAliases === "object"
+      ? saved.merchantAliases
+      : {};
     return saved;
   } catch {
     return defaults;
@@ -84,29 +88,34 @@ let toastTimer;
 let ocrPreviewUrl = "";
 let latestOCRResult = null;
 let autoAnalyzeLatestSelection = false;
+let lastOCRUndo = null;
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
+function merchantAliasKey(value) {
+  return String(value || "").normalize("NFKC").replace(/[\s・._-]/g, "").toLowerCase();
+}
+
+function aliasMerchant(value) {
+  const normalized = window.OCRService?.normalizeMerchant?.(value) || String(value || "");
+  return state.merchantAliases[merchantAliasKey(normalized)] || normalized;
+}
+
+function applyMerchantAliases(transactions = []) {
+  return transactions.map((transaction) => {
+    const merchantNormalized = aliasMerchant(transaction.merchantNormalized || transaction.merchantRaw);
+    return { ...transaction, merchantNormalized, merchant: transaction.merchantRaw || transaction.merchant };
+  });
+}
+
 function totalsForMonth(month = monthKey()) {
-  const items = state.transactions.filter((transaction) => transaction.date.startsWith(month));
-  return items.reduce(
-    (result, transaction) => {
-      result[transaction.type] += Number(transaction.amount);
-      return result;
-    },
-    { income: 0, expense: 0 },
-  );
+  return window.LedgerService.totalsForTransactions(state.transactions, month);
 }
 
 function categorySpend(month = monthKey()) {
-  return state.transactions
-    .filter((transaction) => transaction.type === "expense" && transaction.date.startsWith(month))
-    .reduce((result, transaction) => {
-      result[transaction.category] = (result[transaction.category] || 0) + Number(transaction.amount);
-      return result;
-    }, {});
+  return window.LedgerService.categorySpendForTransactions(state.transactions, month);
 }
 
 function savingsReserve(income) {
@@ -166,16 +175,18 @@ function transactionRows(items, limit) {
   if (!rows.length) return '<div class="empty">該当する収支はありません</div>';
   return rows.map((transaction) => {
     const category = categoryById(transaction.category);
-    const sign = transaction.type === "income" ? "+" : "−";
+    const sign = window.LedgerService.signFor(transaction);
+    const kind = window.LedgerService.kindOf(transaction);
+    const kindLabel = window.LedgerService.labelFor(transaction);
     const source = transaction.source === "recurring" ? "・固定費から自動記録" : "";
     return `
-      <button class="transaction-row" data-action="edit-transaction" data-id="${transaction.id}">
+      <button class="transaction-row ${kind.replace("_", "-")}" data-action="edit-transaction" data-id="${transaction.id}">
         <span class="category-icon">${category.icon}</span>
         <span class="row-main">
           <span class="row-title">${escapeHtml(transaction.memo || category.name)}</span>
-          <span class="row-sub">${dateLabel.format(parseLocalDate(transaction.date))}・${category.name}${source}</span>
+          <span class="row-sub">${dateLabel.format(parseLocalDate(transaction.date))}・${category.name}${source} <i class="transaction-kind ${kind.replace("_", "-")}">${kindLabel}</i></span>
         </span>
-        <span class="row-amount ${transaction.type}">${sign}${yen.format(transaction.amount)}</span>
+        <span class="row-amount ${kind}">${sign}${yen.format(transaction.amount)}</span>
       </button>`;
   }).join("");
 }
@@ -198,7 +209,7 @@ function budgetAlerts() {
 function renderHome() {
   const totals = totalsForMonth();
   const reserve = savingsReserve(totals.income);
-  const available = totals.income - totals.expense - reserve;
+  const available = totals.net - reserve;
   const alerts = budgetAlerts();
   const summary = savingsSummary();
   const spend = categorySpend();
@@ -242,7 +253,7 @@ function renderHome() {
         `, { action: "go-analysis" })}
         ${glassCard(`
           <div class="section-head"><h3>最近の履歴</h3><span class="card-chevron">›</span></div>
-          <div class="compact-list">${recent.map((item) => `<span><b>${escapeHtml(item.memo || categoryById(item.category).name)}</b><strong>${item.type === "income" ? "+" : "−"}${yen.format(item.amount)}</strong></span>`).join("") || "<small>履歴はありません</small>"}</div>
+          <div class="compact-list">${recent.map((item) => `<span><b>${escapeHtml(item.memo || categoryById(item.category).name)}</b><strong>${window.LedgerService.signFor(item)}${yen.format(item.amount)}</strong></span>`).join("") || "<small>履歴はありません</small>"}</div>
           <span class="all-link">すべて見る</span>
         `, { action: "go-list" })}
         ${glassCard(`
@@ -257,9 +268,19 @@ function renderHome() {
         <div class="balance-strip">
           <div><span>収入</span><strong class="income">${yen.format(totals.income)}</strong></div>
           <div><span>支出</span><strong>${yen.format(totals.expense)}</strong></div>
-          <div><span>収支</span><strong class="${totals.income - totals.expense < 0 ? "expense" : "income"}">${yen.format(totals.income - totals.expense)}</strong></div>
+          <div><span>収支</span><strong class="${totals.net < 0 ? "expense" : "income"}">${yen.format(totals.net)}</strong></div>
         </div>
       `, { action: "go-analysis" })}
+      ${totals.refund || totals.transferIn || totals.transferOut || totals.charge || totals.pending ? glassCard(`
+        <div class="section-head"><h3>通常収支に含めない動き</h3><span class="card-chevron">›</span></div>
+        <div class="cash-movement-grid">
+          ${totals.refund ? `<span>返金<strong>${yen.format(totals.refund)}</strong></span>` : ""}
+          ${totals.transferIn ? `<span>受取<strong>${yen.format(totals.transferIn)}</strong></span>` : ""}
+          ${totals.transferOut ? `<span>送金<strong>${yen.format(totals.transferOut)}</strong></span>` : ""}
+          ${totals.charge ? `<span>チャージ<strong>${yen.format(totals.charge)}</strong></span>` : ""}
+          ${totals.pending ? `<span>未確定<strong>${yen.format(totals.pending)}</strong></span>` : ""}
+        </div>
+      `, { action: "go-list" }) : ""}
     </div>`;
 }
 
@@ -274,9 +295,9 @@ function renderList() {
   page.innerHTML = `
     <div class="section-head"><h2>収支リスト</h2><span class="row-sub">${state.transactions.length}件</span></div>
     <div class="filters">
-      <input id="search" type="search" placeholder="メモ・カテゴリを検索" value="${escapeHtml(oldSearch)}" />
+      <input id="search" type="search" placeholder="店名・カテゴリ・支払方法を検索" value="${escapeHtml(oldSearch)}" />
       <select id="type-filter">
-        <option value="all">すべて</option><option value="expense">支出</option><option value="income">収入</option>
+        <option value="all">すべて</option><option value="expense">支出</option><option value="income">収入</option><option value="refund">返金</option><option value="transfer">送金・受取・チャージ</option><option value="pending">未確定</option>
       </select>
       <select id="month-filter" class="month-filter">
         <option value="all">すべての期間</option>
@@ -296,8 +317,14 @@ function updateFilteredList() {
   const month = page.querySelector("#month-filter").value;
   const items = state.transactions.filter((transaction) => {
     const category = categoryById(transaction.category);
-    const matchesQuery = !query || `${transaction.memo} ${category.name}`.toLowerCase().includes(query);
-    return matchesQuery && (type === "all" || transaction.type === type) && (month === "all" || transaction.date.startsWith(month));
+    const matchesQuery = !query || [
+      transaction.memo,
+      transaction.paymentMethod,
+      transaction.ocr?.merchantRaw,
+      transaction.ocr?.merchantNormalized,
+      category.name,
+    ].filter(Boolean).join(" ").toLowerCase().includes(query);
+    return matchesQuery && window.LedgerService.matchesTypeFilter(transaction, type) && (month === "all" || transaction.date.startsWith(month));
   });
   page.querySelector("#transaction-list").innerHTML = transactionRows(items);
 }
@@ -338,10 +365,10 @@ function getCashFlowForecast() {
     .filter((rule) => rule.type === "expense")
     .reduce((sum, rule) => sum + Number(rule.amount), 0);
   return {
-    currentNet: totals.income - totals.expense,
+    currentNet: totals.net,
     scheduledIncome,
     scheduledExpense,
-    projectedNet: totals.income - totals.expense + scheduledIncome - scheduledExpense,
+    projectedNet: totals.net + scheduledIncome - scheduledExpense,
     upcoming,
   };
 }
@@ -383,7 +410,7 @@ function renderAnalysis() {
   });
   const subscriptions = getSubscriptions();
   const subscriptionMonthly = subscriptions.reduce((sum, rule) => sum + Number(rule.amount), 0);
-  const currentExpenses = state.transactions.filter((item) => item.type === "expense" && item.date.startsWith(monthKey()));
+  const currentExpenses = state.transactions.filter((item) => window.LedgerService.kindOf(item) === "expense" && item.date.startsWith(monthKey()));
   const weeklySpend = [1, 2, 3, 4, 5].map((week) => currentExpenses
     .filter((item) => Math.min(Math.ceil(Number(item.date.slice(8)) / 7), 5) === week)
     .reduce((sum, item) => sum + Number(item.amount), 0));
@@ -611,6 +638,9 @@ function renderSettings() {
     ["go-list", "☷", "収支履歴", "検索・フィルタ・編集"],
     ["go-recurring", "↻", "固定費", "自動記録の追加・編集"],
     ["go-budget", "◎", "予算と貯金設定", "月間・カテゴリ別予算"],
+    ["open-merchant-alias", "≡", "店名の統一ルール", "OCRの表記ゆれをあとから補正"],
+    ["export-data", "⇩", "データを書き出す", "端末内データをJSONでバックアップ"],
+    ["import-data", "⇧", "バックアップを復元", "JSONバックアップから復元"],
   ];
   document.querySelector("#page-settings").innerHTML = `
     <div class="stack settings-page">
@@ -692,6 +722,7 @@ function openTransaction(transactionId) {
   const dialog = document.querySelector("#transaction-dialog");
   const form = document.querySelector("#transaction-form");
   const transaction = state.transactions.find((item) => item.id === transactionId);
+  const isOCRTransaction = Boolean(transaction?.ocr);
   form.reset();
   form.elements.id.value = transaction?.id || "";
   const type = transaction?.type || "expense";
@@ -699,6 +730,12 @@ function openTransaction(transactionId) {
   form.elements.amount.value = transaction?.amount || "";
   form.elements.date.value = transaction?.date || localISO();
   form.elements.memo.value = transaction?.memo || "";
+  form.elements.ocrDirection.value = transaction?.ocr?.direction || type;
+  form.elements.ocrStatus.value = transaction?.ocr?.status === "refund_completed"
+    ? "refund_completed"
+    : transaction?.ocr?.status === "pending" ? "pending" : "settled";
+  document.querySelector("#transaction-type-segment").classList.toggle("hidden", isOCRTransaction);
+  document.querySelector("#transaction-ocr-fields").classList.toggle("hidden", !isOCRTransaction);
   setCategoryOptions(form.elements.category, type, transaction?.category);
   document.querySelector("#transaction-category-hint").textContent = transaction
     ? "メモを変更すると再分類します"
@@ -770,10 +807,17 @@ function resetOCRDialog() {
   document.querySelector("#ocr-single-fields").classList.remove("hidden");
   document.querySelector("#ocr-batch-fields").classList.add("hidden");
   document.querySelector("#ocr-batch-list").innerHTML = "";
-  ["date", "amount", "merchant", "paymentMethod", "category"].forEach((name) => {
+  ["date", "amount", "merchant", "paymentMethod", "direction", "status", "category"].forEach((name) => {
     form.elements[name].disabled = false;
   });
+  document.querySelector("#ocr-review-summary").innerHTML = "";
+  document.querySelector("#ocr-single-duplicate-choice").innerHTML = "";
+  document.querySelector("#ocr-single-duplicate-choice").classList.add("hidden");
+  document.querySelector("#ocr-image-reference").classList.add("hidden");
+  document.querySelector("#ocr-review-image").removeAttribute("src");
   document.querySelector("#ocr-submit-button").textContent = "確認して登録";
+  document.querySelector("#ocr-error-message").classList.add("hidden");
+  document.querySelector("#ocr-error-message").textContent = "";
   document.querySelector("#analyze-ocr-button").disabled = true;
   document.querySelector("#analyze-ocr-button .button-label").classList.remove("hidden");
   document.querySelector("#analyze-ocr-button .button-loading").classList.add("hidden");
@@ -795,66 +839,138 @@ function openOCRDialog(pickLatest = false) {
   }
 }
 
-function ocrCategoryOptions(candidates = []) {
+function ocrCategoryOptions(candidates = [], selected = "") {
   const candidateIds = candidates.map((candidate) => candidate.categoryId);
   const orderedCategories = [
     ...candidateIds.map(categoryById),
     ...CATEGORIES.filter((category) => category.type === "expense" && !candidateIds.includes(category.id)),
   ];
   return orderedCategories
-    .map((category, index) => `<option value="${category.id}">${index < candidateIds.length ? "候補・" : ""}${category.name}</option>`)
+    .map((category, index) => '<option value="' + category.id + '"' + (category.id === selected ? " selected" : "") + '>' + (index < candidateIds.length ? "候補・" : "") + category.name + "</option>")
     .join("");
 }
 
 function setOCRCategoryOptions(result) {
   const select = document.querySelector("#ocr-form").elements.category;
-  select.innerHTML = ocrCategoryOptions(result.categoryCandidates);
-  select.value = result.categoryCandidates[0]?.categoryId || "other-expense";
+  select.innerHTML = ocrCategoryOptions(result.categoryCandidates, result.category);
+  select.value = result.category || result.categoryCandidates[0]?.categoryId || "other-expense";
   const topCandidate = result.categoryCandidates[0];
   document.querySelector("#ocr-category-hint").textContent = topCandidate
     ? `最有力候補：${categoryById(topCandidate.categoryId).name}（${Math.round(topCandidate.score * 100)}%）`
     : "候補を選択してください";
 }
 
+function formatOCRConfidence(value) {
+  const normalized = Number(value) <= 1 ? Number(value) * 100 : Number(value);
+  return `${Math.max(0, Math.min(100, Math.round(normalized || 0)))}%`;
+}
+
+function ocrDecisionLabel(transaction) {
+  if (transaction.status === "excluded" || ["point", "internal_transfer"].includes(transaction.direction)) return ["除外", "excluded"];
+  if (transaction.decisionConfidence >= 0.95 && !transaction.needsReview) return ["自動登録候補", "auto"];
+  return ["要確認", "review"];
+}
+
+function duplicateResolutionMarkup(transaction, batch = false) {
+  if (!transaction.duplicateCandidateIds?.length) return "";
+  const isStatement = transaction.sourceType === "card_statement"
+    && transaction.duplicateCandidates?.some((candidate) => candidate.sourceType === "card_email_notice");
+  const isNotice = transaction.sourceType === "card_email_notice"
+    && transaction.duplicateCandidates?.some((candidate) => candidate.sourceType === "card_statement");
+  const defaultValue = isStatement ? "merge" : isNotice ? "skip" : "separate";
+  const field = batch ? ' data-field="duplicateResolution"' : ' name="duplicateResolution"';
+  return '<div class="ocr-duplicate-choice"><p>重複候補 ' + transaction.duplicateCandidateIds.length + '件</p><select' + field + '>'
+    + '<option value="merge"' + (defaultValue === "merge" ? " selected" : "") + '>既存の利用通知を確定済み明細に統合</option>'
+    + '<option value="separate"' + (defaultValue === "separate" ? " selected" : "") + '>別の取引として登録</option>'
+    + '<option value="skip"' + (defaultValue === "skip" ? " selected" : "") + '>登録しない</option>'
+    + "</select></div>";
+}
+
+function renderOCRReviewSummary(result) {
+  const primary = result.transactions.find((transaction) => transaction.status !== "excluded") || result.transactions[0];
+  const label = window.OCRService?.screenLabels?.[result.screenType] || "判定できませんでした";
+  const decision = ocrDecisionLabel(primary);
+  const counts = result.transactions.reduce((summary, transaction) => {
+    const type = ocrDecisionLabel(transaction)[1];
+    summary[type] += 1;
+    if (transaction.duplicateCandidateIds?.length) summary.duplicates += 1;
+    return summary;
+  }, { auto: 0, review: 0, excluded: 0, duplicates: 0 });
+  const reasons = primary.reasons?.length
+    ? '<p class="ocr-summary-reason">' + primary.reasons.map((item) => escapeHtml(item)).join("・") + "</p>" : "";
+  document.querySelector("#ocr-screen-type").textContent = label;
+  document.querySelector("#ocr-review-summary").innerHTML = '<div class="ocr-screen-chip">' + escapeHtml(label)
+    + "・判定 " + formatOCRConfidence(result.screenTypeConfidence) + '</div><div class="ocr-confidence-grid">'
+    + '<span>金額 <b>' + formatOCRConfidence(primary.confidenceBreakdown?.amount) + "</b></span>"
+    + '<span>日付 <b>' + formatOCRConfidence(primary.confidenceBreakdown?.date) + "</b></span>"
+    + '<span>店名 <b>' + formatOCRConfidence(primary.confidenceBreakdown?.merchant) + "</b></span>"
+    + '<span>方向 <b>' + formatOCRConfidence(primary.confidenceBreakdown?.direction) + "</b></span>"
+    + '<span>カテゴリ <b>' + formatOCRConfidence(primary.confidenceBreakdown?.category) + "</b></span>"
+    + '</div><div class="ocr-review-counts"><span class="auto">登録候補 ' + counts.auto + "件</span>"
+    + '<span class="review">要確認 ' + counts.review + "件</span>"
+    + '<span class="excluded">除外 ' + counts.excluded + "件</span></div>"
+    + (counts.duplicates ? '<p class="ocr-duplicate-warning">重複候補が' + counts.duplicates + "件あります。登録方法を確認してください。</p>" : "")
+    + '<div class="ocr-decision ' + decision[1] + '">' + decision[0] + "・判断 " + formatOCRConfidence(primary.decisionConfidence) + "</div>" + reasons;
+}
+
 function renderOCRBatch(transactions) {
   const paymentMethods = ["PayPay", "クレジットカード", "現金", "その他"];
   document.querySelector("#ocr-batch-count").textContent = `${transactions.length}件の明細を検出`;
-  document.querySelector("#ocr-batch-list").innerHTML = transactions.map((transaction, index) => `
-    <article class="ocr-batch-item" data-source-type="${escapeHtml(transaction.sourceType || "auto")}">
-      <div class="ocr-batch-title">
-        <label><input class="ocr-batch-include" type="checkbox" checked /> 登録する</label>
-        <strong>明細 ${index + 1}</strong>
-      </div>
-      <div class="ocr-field-grid">
-        <label class="field">日付<input data-field="date" type="date" value="${escapeHtml(transaction.date)}" /></label>
-        <label class="field">金額<input data-field="amount" type="number" min="1" inputmode="numeric" value="${Number(transaction.amount) || ""}" /></label>
-      </div>
-      <label class="field">店名<input data-field="merchant" maxlength="50" value="${escapeHtml(transaction.merchant)}" /></label>
-      <div class="ocr-field-grid">
-        <label class="field">支払い方法<select data-field="paymentMethod">${paymentMethods.map((method) =>
-          `<option value="${method}" ${method === transaction.paymentMethod ? "selected" : ""}>${method}</option>`).join("")}</select></label>
-        <label class="field">カテゴリ<select data-field="category">${ocrCategoryOptions(transaction.categoryCandidates)}</select></label>
-      </div>
-    </article>`).join("");
+  document.querySelector("#ocr-batch-list").innerHTML = transactions.map((transaction, index) => {
+    const decision = ocrDecisionLabel(transaction);
+    const checked = transaction.status !== "excluded" && !["point", "internal_transfer"].includes(transaction.direction);
+    const reason = transaction.reasons?.length
+      ? '<p class="ocr-reasons">' + transaction.reasons.map((item) => escapeHtml(item)).join("・") + "</p>" : "";
+    const paymentOptions = paymentMethods.map((method) => '<option value="' + method + '"' + (method === transaction.paymentMethod ? " selected" : "") + ">" + method + "</option>").join("");
+    return '<article class="ocr-batch-item ' + decision[1] + '" data-candidate-index="' + index + '" data-source-type="' + escapeHtml(transaction.sourceType || "unknown") + '">'
+      + '<div class="ocr-batch-title"><label><input class="ocr-batch-include" type="checkbox"' + (checked ? " checked" : "") + " /> 登録する</label>"
+      + '<strong>明細 ' + (index + 1) + "</strong></div>"
+      + '<div class="ocr-item-status"><span class="' + decision[1] + '">' + decision[0] + "</span><span>OCR " + formatOCRConfidence(transaction.ocrConfidence) + "・判断 " + formatOCRConfidence(transaction.decisionConfidence) + "</span></div>"
+      + reason
+      + '<div class="ocr-field-grid"><label class="field">日付<input data-field="date" type="date" value="' + escapeHtml(transaction.date) + '" /></label>'
+      + '<label class="field">金額<input data-field="amount" type="number" min="1" inputmode="numeric" value="' + (Number(transaction.amount) || "") + '" /></label></div>'
+      + '<label class="field">店名<input data-field="merchant" maxlength="50" value="' + escapeHtml(transaction.merchantRaw || transaction.merchant) + '" /></label>'
+      + '<div class="ocr-field-grid"><label class="field">支払い方法<select data-field="paymentMethod">' + paymentOptions + "</select></label>"
+      + '<label class="field">カテゴリ<select data-field="category">' + ocrCategoryOptions(transaction.categoryCandidates, transaction.category) + "</select></label></div>"
+      + '<div class="ocr-field-grid"><label class="field">収支方向<select data-field="direction"><option value="expense"' + (transaction.direction === "expense" ? " selected" : "") + '>支出</option><option value="income"' + (transaction.direction === "income" ? " selected" : "") + '>収入</option><option value="transfer_out"' + (transaction.direction === "transfer_out" ? " selected" : "") + '>送金（出金）</option><option value="transfer_in"' + (transaction.direction === "transfer_in" ? " selected" : "") + '>受取（入金）</option><option value="refund"' + (transaction.direction === "refund" ? " selected" : "") + '>返金</option><option value="internal_transfer"' + (transaction.direction === "internal_transfer" ? " selected" : "") + '>チャージ</option></select></label>'
+      + '<label class="field">状態<select data-field="status"><option value="settled"' + (transaction.status === "settled" ? " selected" : "") + '>確定</option><option value="pending"' + (transaction.status === "pending" ? " selected" : "") + '>保留</option><option value="refund_completed"' + (transaction.status === "refund_completed" ? " selected" : "") + '>返金完了</option><option value="excluded"' + (transaction.status === "excluded" ? " selected" : "") + '>除外</option></select></label></div>'
+      + duplicateResolutionMarkup(transaction, true) + "</article>";
+  }).join("");
 }
 
 function showOCRResult(result) {
   const form = document.querySelector("#ocr-form");
-  const transactions = result.transactions || [];
+  const aliased = applyMerchantAliases(result.transactions || []);
+  result.transactions = window.OCRService?.matchExistingTransactions
+    ? window.OCRService.matchExistingTransactions(aliased, state.transactions)
+    : aliased;
+  const transactions = result.transactions;
+  const primary = transactions.find((transaction) => transaction.status !== "excluded") || transactions[0];
   const isBatch = transactions.length > 1;
   latestOCRResult = result;
   form.elements.rawText.value = result.rawText;
-  form.elements.date.value = result.date;
-  form.elements.amount.value = result.amount;
-  form.elements.merchant.value = result.merchant;
-  form.elements.paymentMethod.value = result.paymentMethod;
-  setOCRCategoryOptions(result);
+  form.elements.date.value = primary?.date || "";
+  form.elements.amount.value = primary?.amount || "";
+  form.elements.merchant.value = primary?.merchantRaw || primary?.merchant || "";
+  form.elements.paymentMethod.value = primary?.paymentMethod || "その他";
+  form.elements.direction.value = ["expense", "income", "transfer_out", "transfer_in", "refund", "internal_transfer"].includes(primary?.direction) ? primary.direction : "expense";
+  form.elements.status.value = primary?.status || "settled";
+  setOCRCategoryOptions(primary || result);
+  renderOCRReviewSummary(result);
+  document.querySelector("#ocr-image-reference").classList.toggle("hidden", !ocrPreviewUrl);
+  document.querySelector("#ocr-review-image").src = ocrPreviewUrl;
   document.querySelector("#ocr-single-fields").classList.toggle("hidden", isBatch);
   document.querySelector("#ocr-batch-fields").classList.toggle("hidden", !isBatch);
-  ["date", "amount", "merchant", "paymentMethod", "category"].forEach((name) => {
+  ["date", "amount", "merchant", "paymentMethod", "direction", "status", "category"].forEach((name) => {
     form.elements[name].disabled = isBatch;
   });
-  if (isBatch) renderOCRBatch(transactions);
+  if (isBatch) {
+    renderOCRBatch(transactions);
+  } else {
+    const duplicateChoice = document.querySelector("#ocr-single-duplicate-choice");
+    duplicateChoice.innerHTML = duplicateResolutionMarkup(primary);
+    duplicateChoice.classList.toggle("hidden", !primary?.duplicateCandidateIds?.length);
+  }
   document.querySelector("#ocr-submit-button").textContent = isBatch
     ? `${transactions.length}件を確認して登録`
     : "確認して登録";
@@ -887,6 +1003,69 @@ function closeDialogSmooth(dialog, afterClose) {
   }, 170);
 }
 
+function showOCRRegistrationComplete(records, summary = {}) {
+  const created = records.filter((record) => record.action === "created");
+  const merged = records.filter((record) => record.action === "merged");
+  const transactions = created.map((record) => state.transactions.find((transaction) => transaction.id === record.transactionId)).filter(Boolean);
+  document.querySelector("#ocr-complete-summary").textContent = "登録 " + created.length + "件"
+    + "・統合 " + merged.length + "件"
+    + "・除外 " + (summary.excluded || 0) + "件"
+    + "・要確認 " + (summary.review || 0) + "件"
+    + "・重複スキップ " + (summary.duplicateSkipped || 0) + "件";
+  document.querySelector("#ocr-complete-list").innerHTML = transactions.length
+    ? transactions.map((transaction) => '<button type="button" class="ocr-complete-row" data-action="edit-after-ocr" data-id="' + transaction.id + '"><span><strong>'
+      + escapeHtml(transaction.memo) + '</strong><small>' + escapeHtml(transaction.date) + "・" + categoryById(transaction.category).name
+      + '</small></span><b>' + (transaction.type === "income" ? "+" : "−") + yen.format(transaction.amount) + "</b><i>編集</i></button>").join("")
+    : '<p class="row-sub">新規登録はありません。統合結果は一覧から確認できます。</p>';
+  document.querySelector("#ocr-complete-dialog").showModal();
+}
+
+function undoLastOCRRegistration() {
+  if (!lastOCRUndo) return;
+  const createdIds = new Set(lastOCRUndo.records.filter((record) => record.action === "created").map((record) => record.transactionId));
+  state.transactions = state.transactions.filter((transaction) => !createdIds.has(transaction.id));
+  lastOCRUndo.records.filter((record) => record.action === "merged" && record.previousTransaction).forEach((record) => {
+    const index = state.transactions.findIndex((transaction) => transaction.id === record.transactionId);
+    if (index >= 0) state.transactions[index] = record.previousTransaction;
+    else state.transactions.push(record.previousTransaction);
+  });
+  lastOCRUndo = null;
+  saveState();
+  renderAll();
+  switchPage("list");
+  closeDialogSmooth(document.querySelector("#ocr-complete-dialog"));
+  showToast("今回のOCR登録を取り消しました");
+}
+
+function exportStateBackup() {
+  const payload = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), data: state }, null, 2);
+  const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "chokin-zaurus-backup-" + localISO() + ".json";
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  showToast("バックアップを書き出しました");
+}
+
+function restoreStateBackup(value) {
+  const imported = value?.data || value;
+  if (!imported || !Array.isArray(imported.transactions) || !Array.isArray(imported.recurring)) {
+    throw new Error("貯金ザウルスのバックアップJSONを選択してください");
+  }
+  state = {
+    ...makeInitialState(),
+    ...imported,
+    budgets: { ...makeInitialState().budgets, ...(imported.budgets || {}) },
+    savings: { ...makeInitialState().savings, ...(imported.savings || {}) },
+    savingsGoals: Array.isArray(imported.savingsGoals) ? imported.savingsGoals : [],
+    merchantAliases: imported.merchantAliases && typeof imported.merchantAliases === "object" ? imported.merchantAliases : {},
+  };
+  saveState();
+  renderAll();
+  switchPage("home");
+}
+
 document.querySelectorAll(".nav-item").forEach((button) => {
   if (button.dataset.target) button.addEventListener("click", () => switchPage(button.dataset.target));
 });
@@ -903,6 +1082,13 @@ document.addEventListener("click", (event) => {
   if (action === "go-recurring") switchPage("recurring");
   if (action === "go-budget") switchPage("budget");
   if (action === "go-settings") switchPage("settings");
+  if (action === "open-merchant-alias") document.querySelector("#merchant-alias-dialog").showModal();
+  if (action === "export-data") exportStateBackup();
+  if (action === "import-data") document.querySelector("#data-import-file").click();
+  if (action === "edit-after-ocr") {
+    closeDialogSmooth(document.querySelector("#ocr-complete-dialog"), () => openTransaction(itemId));
+  }
+  if (action === "undo-last-ocr") undoLastOCRRegistration();
   if (action === "open-record-sheet") document.querySelector("#record-action-dialog").showModal();
   if (action === "record-manual") {
     closeDialogSmooth(document.querySelector("#record-action-dialog"), () => openTransaction());
@@ -954,6 +1140,7 @@ document.querySelectorAll(".close-dialog").forEach((button) => {
 
 document.querySelector("#ocr-file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
+  document.querySelector("#ocr-error-message").classList.add("hidden");
   cleanupOCRPreview();
   if (!file) {
     autoAnalyzeLatestSelection = false;
@@ -980,6 +1167,7 @@ async function analyzeSelectedOCRFile() {
   if (!file) return false;
 
   button.disabled = true;
+  document.querySelector("#ocr-error-message").classList.add("hidden");
   button.querySelector(".button-label").classList.add("hidden");
   loading.textContent = "OCRを準備中…";
   loading.classList.remove("hidden");
@@ -993,7 +1181,11 @@ async function analyzeSelectedOCRFile() {
     showOCRResult(result);
     return true;
   } catch (error) {
-    showToast(error?.message || "画像を解析できませんでした");
+    const message = error?.message || "画像を解析できませんでした";
+    const errorMessage = document.querySelector("#ocr-error-message");
+    errorMessage.textContent = message + "。画像を選び直すか、もう一度解析してください。";
+    errorMessage.classList.remove("hidden");
+    showToast(message);
     return false;
   } finally {
     button.disabled = false;
@@ -1009,6 +1201,35 @@ document.querySelector("#analyze-ocr-button").addEventListener("click", async ()
 
 document.querySelector("#ocr-back-button").addEventListener("click", resetOCRDialog);
 document.querySelector("#ocr-dialog").addEventListener("close", cleanupOCRPreview);
+document.querySelector("#ocr-image-toggle").addEventListener("click", () => {
+  document.querySelector("#ocr-review-image").classList.toggle("hidden");
+});
+
+document.querySelector("#merchant-alias-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const source = form.elements.source.value.trim();
+  const target = form.elements.target.value.trim();
+  if (!source || !target) return;
+  state.merchantAliases[merchantAliasKey(source)] = target;
+  saveState();
+  form.closest("dialog").close();
+  showToast("店名の統一ルールを保存しました");
+});
+
+document.querySelector("#data-import-file").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  event.target.value = "";
+  if (!file) return;
+  try {
+    const payload = JSON.parse(await file.text());
+    if (!window.confirm("現在の端末内データを、バックアップ内容で置き換えますか？")) return;
+    restoreStateBackup(payload);
+    showToast("バックアップを復元しました");
+  } catch (error) {
+    showToast(error?.message || "バックアップを読み込めませんでした");
+  }
+});
 
 document.querySelectorAll('input[name="type"]').forEach((input) => {
   input.addEventListener("change", () => {
@@ -1019,23 +1240,38 @@ document.querySelectorAll('input[name="type"]').forEach((input) => {
 });
 
 document.querySelector('#transaction-form [name="memo"]').addEventListener("input", applyCategorySuggestion);
+document.querySelector('#transaction-form [name="ocrDirection"]').addEventListener("change", (event) => {
+  const form = event.target.form;
+  const type = ["income", "transfer_in", "refund"].includes(event.target.value) ? "income" : "expense";
+  form.elements.type.value = type;
+  setCategoryOptions(form.elements.category, type, form.elements.category.value);
+});
 
 document.querySelector("#transaction-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form));
   const existingIndex = state.transactions.findIndex((transaction) => transaction.id === data.id);
+  const existing = existingIndex >= 0 ? state.transactions[existingIndex] : null;
   const transaction = {
+    ...(existing || {}),
     id: data.id || id(),
     type: data.type,
     amount: Number(data.amount),
     date: data.date,
     category: data.category,
     memo: data.memo.trim(),
-    source: existingIndex >= 0 ? state.transactions[existingIndex].source : "manual",
-    ...(existingIndex >= 0 && state.transactions[existingIndex].recurringId
-      ? { recurringId: state.transactions[existingIndex].recurringId } : {}),
+    source: existing?.source || "manual",
   };
+  if (existing?.ocr) {
+    transaction.type = ["income", "transfer_in", "refund"].includes(data.ocrDirection) ? "income" : "expense";
+    transaction.ocr = {
+      ...existing.ocr,
+      direction: data.ocrDirection,
+      status: data.ocrStatus,
+      needsReview: false,
+    };
+  }
   if (existingIndex >= 0) state.transactions[existingIndex] = transaction;
   else state.transactions.push(transaction);
   saveState(); form.closest("dialog").close(); renderAll(); switchPage(currentPage);
@@ -1067,58 +1303,122 @@ document.querySelector("#delete-savings-goal-button").addEventListener("click", 
   showToast("貯金目標を削除しました");
 });
 
+function ocrEntryFromFormItem(item, data) {
+  const candidate = latestOCRResult?.transactions?.[Number(item?.dataset?.candidateIndex) || 0] || {};
+  const read = (field) => item ? item.querySelector('[data-field="' + field + '"]').value : data[field];
+  return {
+    candidate,
+    date: read("date"),
+    amount: Number(read("amount")),
+    merchant: String(read("merchant") || "").trim(),
+    paymentMethod: read("paymentMethod"),
+    category: read("category") || "other-expense",
+    direction: read("direction") || candidate.direction || "expense",
+    status: read("status") || candidate.status || "settled",
+    duplicateResolution: item?.querySelector('[data-field="duplicateResolution"]')?.value
+      || document.querySelector('#ocr-single-duplicate-choice select')?.value || "separate",
+  };
+}
+
+function transactionFromOCREntry(entry, rawText) {
+  const candidate = entry.candidate || {};
+  const merchantNormalized = aliasMerchant(entry.merchant);
+  return {
+    id: id(),
+    type: ["income", "transfer_in", "refund"].includes(entry.direction) ? "income" : "expense",
+    amount: entry.amount,
+    date: entry.date,
+    category: entry.category,
+    memo: entry.merchant + "（" + entry.paymentMethod + "）",
+    paymentMethod: entry.paymentMethod,
+    source: "ocr",
+    ocr: {
+      provider: latestOCRResult?.provider || "tesseract",
+      sourceType: candidate.sourceType || latestOCRResult?.screenType || "unknown",
+      sourceName: candidate.sourceName || latestOCRResult?.sourceName || "",
+      merchantRaw: entry.merchant,
+      merchantNormalized,
+      direction: entry.direction,
+      status: entry.status,
+      ocrConfidence: candidate.ocrConfidence || latestOCRResult?.confidence || 0,
+      decisionConfidence: candidate.decisionConfidence || 0,
+      needsReview: Boolean(candidate.needsReview),
+      duplicateCandidateIds: candidate.duplicateCandidateIds || [],
+      rawText: rawText.trim(),
+      imageReference: "device-only",
+    },
+  };
+}
+
+function saveOCREntry(entry, rawText) {
+  const candidate = entry.candidate || {};
+  const mergeTarget = entry.duplicateResolution === "merge" && candidate.sourceType === "card_statement"
+    ? candidate.duplicateCandidates?.find((match) => match.sourceType === "card_email_notice")
+    : null;
+  const transaction = transactionFromOCREntry(entry, rawText);
+  if (mergeTarget) {
+    const index = state.transactions.findIndex((item) => item.id === mergeTarget.id);
+    if (index >= 0) {
+      const existing = state.transactions[index];
+      state.transactions[index] = {
+        ...existing,
+        ...transaction,
+        id: existing.id,
+        ocr: {
+          ...existing.ocr,
+          ...transaction.ocr,
+          status: "settled",
+          sourceType: "card_statement",
+          mergedSourceTypes: [...new Set([existing.ocr?.sourceType, "card_statement"].filter(Boolean))],
+        },
+      };
+      return { action: "merged", transactionId: existing.id, previousTransaction: existing };
+    }
+  }
+  state.transactions.push(transaction);
+  return { action: "created", transactionId: transaction.id };
+}
+
 document.querySelector("#ocr-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form));
   const isBatchMode = !document.querySelector("#ocr-batch-fields").classList.contains("hidden");
-  const batchItems = [...document.querySelectorAll("#ocr-batch-list .ocr-batch-item")]
+  const allBatchItems = [...document.querySelectorAll("#ocr-batch-list .ocr-batch-item")];
+  const batchItems = allBatchItems
     .filter((item) => item.querySelector(".ocr-batch-include").checked);
-  const entries = isBatchMode
-    ? batchItems.map((item) => ({
-      date: item.querySelector('[data-field="date"]').value,
-      amount: Number(item.querySelector('[data-field="amount"]').value),
-      merchant: item.querySelector('[data-field="merchant"]').value.trim(),
-      paymentMethod: item.querySelector('[data-field="paymentMethod"]').value,
-      category: item.querySelector('[data-field="category"]').value,
-      sourceType: item.dataset.sourceType,
-    }))
-    : [{
-      date: data.date,
-      amount: Number(data.amount),
-      merchant: data.merchant?.trim(),
-      paymentMethod: data.paymentMethod,
-      category: data.category,
-      sourceType: latestOCRResult?.sourceType || data.sourceType,
-    }];
-  if (!entries.length || entries.some((entry) => !entry.date || !entry.amount || !entry.merchant)) {
+  const allEntries = isBatchMode ? allBatchItems.map((item) => ocrEntryFromFormItem(item, data)) : [ocrEntryFromFormItem(null, data)];
+  const entries = (isBatchMode ? batchItems.map((item) => ocrEntryFromFormItem(item, data)) : [ocrEntryFromFormItem(null, data)])
+    .filter((entry) => entry.duplicateResolution !== "skip" && entry.status !== "excluded");
+  if (!entries.length) {
+    showToast("登録対象の明細を選択してください");
+    return;
+  }
+  if (entries.some((entry) => !entry.date || !entry.amount || !entry.merchant || !["expense", "income", "transfer_out", "transfer_in", "refund"].includes(entry.direction))) {
     showToast("登録する明細の日付・金額・店名を確認してください");
     return;
   }
-  entries.forEach((entry) => state.transactions.push({
-    id: id(),
-    type: "expense",
-    amount: entry.amount,
-    date: entry.date,
-    category: entry.category,
-    memo: `${entry.merchant}（${entry.paymentMethod}）`,
-    paymentMethod: entry.paymentMethod,
-    source: "ocr",
-    ocr: {
-      provider: latestOCRResult?.provider || "tesseract",
-      sourceType: entry.sourceType,
-      rawText: data.rawText.trim(),
-    },
-  }));
+  const duplicateEntries = entries.filter((entry) => entry.candidate?.duplicateCandidateIds?.length && entry.duplicateResolution === "separate");
+  if (duplicateEntries.length && !window.confirm("重複候補が" + duplicateEntries.length + "件あります。別取引として登録しますか？")) return;
+  const result = entries.map((entry) => saveOCREntry(entry, data.rawText));
+  const summary = {
+    excluded: (latestOCRResult?.transactions || []).filter((candidate) => candidate.status === "excluded").length,
+    review: entries.filter((entry) => entry.candidate?.needsReview).length,
+    duplicateSkipped: allEntries.filter((entry) => entry.duplicateResolution === "skip" && entry.candidate?.duplicateCandidateIds?.length).length,
+  };
+  lastOCRUndo = { records: result };
   saveState();
   form.closest("dialog").close();
   renderAll();
   switchPage("list");
-  showToast(`OCR結果を${entries.length}件登録しました`);
+  const merged = result.filter((record) => record.action === "merged").length;
+  showOCRRegistrationComplete(result, summary);
+  showToast(merged ? "OCR結果を登録し、利用通知を確定済み明細に統合しました" : "OCR結果を" + entries.length + "件登録しました");
 });
 
 document.querySelector("#delete-transaction-button").addEventListener("click", () => {
   const transactionId = document.querySelector("#transaction-form").elements.id.value;
+  if (!window.confirm("この取引を削除しますか？")) return;
   state.transactions = state.transactions.filter((transaction) => transaction.id !== transactionId);
   saveState(); document.querySelector("#transaction-dialog").close(); renderAll(); switchPage(currentPage);
   showToast("収支を削除しました");

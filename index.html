@@ -72,9 +72,21 @@
           <h2 id="transaction-dialog-title">収支を追加</h2>
           <button type="button" class="icon-button close-dialog" aria-label="閉じる">×</button>
         </div>
-        <div class="segmented">
+        <div class="segmented" id="transaction-type-segment">
           <label><input type="radio" name="type" value="expense" checked /><span>支出</span></label>
           <label><input type="radio" name="type" value="income" /><span>収入</span></label>
+        </div>
+        <div class="ocr-field-grid hidden" id="transaction-ocr-fields">
+          <label class="field">取引区分
+            <select name="ocrDirection">
+              <option value="expense">支出</option><option value="income">収入</option>
+              <option value="transfer_out">送金</option><option value="transfer_in">受取</option>
+              <option value="internal_transfer">チャージ</option><option value="refund">返金</option>
+            </select>
+          </label>
+          <label class="field">確定状態
+            <select name="ocrStatus"><option value="settled">確定</option><option value="pending">未確定</option><option value="refund_completed">返金完了</option></select>
+          </label>
         </div>
         <label class="field">金額<input name="amount" type="number" min="1" inputmode="numeric" required placeholder="例：1200" /></label>
         <label class="field">日付<input name="date" type="date" required /></label>
@@ -156,8 +168,10 @@
           <label class="field">画像の種類
             <select name="sourceType" required>
               <option value="auto">自動判定</option>
-              <option value="paypay">PayPay履歴</option>
-              <option value="card">クレカ明細</option>
+              <option value="paypay_history">PayPay履歴</option>
+              <option value="paypay_transfer_history">PayPay送金・出金履歴</option>
+              <option value="card_email_notice">カード利用通知メール</option>
+              <option value="card_statement">カード利用明細</option>
               <option value="receipt">レシート</option>
             </select>
           </label>
@@ -173,6 +187,7 @@
           </div>
           <p class="ocr-access-note">写真へのアクセスを求められた場合は許可してください。Web版は選択した画像だけを読み取ります。</p>
           <p class="ocr-privacy">画像は端末内OCRで解析されます。初回のみOCR辞書の読み込みに時間がかかります。</p>
+          <div id="ocr-error-message" class="ocr-error-message hidden" role="alert"></div>
           <button type="button" class="primary-button full-button" id="analyze-ocr-button" disabled>
             <span class="button-label">画像を解析</span>
             <span class="button-loading hidden">解析中…</span>
@@ -181,8 +196,13 @@
 
         <section id="ocr-review-step" class="ocr-step hidden">
           <div class="ocr-result-head">
-            <div><span class="success-dot">✓</span><strong>解析結果</strong></div>
+            <div><span class="success-dot">✓</span><strong id="ocr-screen-type">解析結果</strong></div>
             <span class="ocr-badge">端末内 OCR</span>
+          </div>
+          <div class="ocr-review-summary" id="ocr-review-summary"></div>
+          <div class="ocr-image-reference hidden" id="ocr-image-reference">
+            <button type="button" class="text-button" id="ocr-image-toggle">元画像の該当箇所を確認</button>
+            <img class="hidden" id="ocr-review-image" alt="OCRに使用した元画像" />
           </div>
           <label class="field">抽出テキスト
             <textarea name="rawText" rows="4" required></textarea>
@@ -201,10 +221,19 @@
                 <option value="その他">その他</option>
               </select>
             </label>
+            <div class="ocr-field-grid">
+              <label class="field">収支方向
+                <select name="direction"><option value="expense">支出</option><option value="income">収入</option><option value="transfer_out">送金（出金）</option><option value="transfer_in">受取（入金）</option><option value="refund">返金</option><option value="internal_transfer">チャージ</option></select>
+              </label>
+              <label class="field">状態
+                <select name="status"><option value="settled">確定</option><option value="pending">保留</option><option value="refund_completed">返金完了</option><option value="excluded">除外</option></select>
+              </label>
+            </div>
             <label class="field">カテゴリ候補
               <select name="category" required></select>
               <span class="field-hint" id="ocr-category-hint"></span>
             </label>
+            <div class="ocr-duplicate-choice hidden" id="ocr-single-duplicate-choice"></div>
           </div>
           <section id="ocr-batch-fields" class="hidden">
             <div class="ocr-batch-head"><strong id="ocr-batch-count"></strong><span>不要な明細はチェックを外せます</span></div>
@@ -218,9 +247,39 @@
       </form>
     </dialog>
 
+    <dialog id="ocr-complete-dialog">
+      <form method="dialog">
+        <div class="dialog-head">
+          <div><p class="dialog-kicker">OCR SAVED</p><h2>登録結果を確認</h2></div>
+          <button type="button" class="icon-button close-dialog" aria-label="閉じる">×</button>
+        </div>
+        <p class="ocr-complete-summary" id="ocr-complete-summary"></p>
+        <div class="ocr-complete-list" id="ocr-complete-list"></div>
+        <div class="dialog-actions">
+          <button type="button" class="text-button danger" data-action="undo-last-ocr">今回分を取り消す</button>
+          <button type="button" class="primary-button close-dialog">一覧へ戻る</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="merchant-alias-dialog">
+      <form method="dialog" id="merchant-alias-form">
+        <div class="dialog-head">
+          <div><p class="dialog-kicker">MERCHANT RULE</p><h2>店名の統一ルール</h2></div>
+          <button type="button" class="icon-button close-dialog" aria-label="閉じる">×</button>
+        </div>
+        <label class="field">OCRで出た店名<input name="source" maxlength="60" required placeholder="例：ＦＩＴ　ＰＬＡＣＥ" /></label>
+        <label class="field">統一後の店名<input name="target" maxlength="60" required placeholder="例：FIT PLACE" /></label>
+        <p class="ocr-access-note">この端末内だけに保存され、次回以降のOCR確認に反映されます。</p>
+        <div class="dialog-actions"><button type="submit" class="primary-button">ルールを保存</button></div>
+      </form>
+    </dialog>
+    <input id="data-import-file" type="file" accept="application/json" class="hidden" />
+
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./prompt-templates.js"></script>
     <script src="./insights-service.js"></script>
+    <script src="./ledger-service.js"></script>
     <script src="./vendor/tesseract.min.js"></script>
     <script src="./ocr-service.js"></script>
     <script src="./app.js"></script>

@@ -1,4 +1,4 @@
-const CACHE_NAME = "chokin-zaurus-v13";
+const CACHE_NAME = "chokin-zaurus-v17";
 const APP_ASSETS = [
   "./",
   "./index.html",
@@ -6,6 +6,7 @@ const APP_ASSETS = [
   "./app.js",
   "./ocr-service.js",
   "./insights-service.js",
+  "./ledger-service.js",
   "./prompt-templates.js",
   "./manifest.webmanifest",
   "./icon-180.png",

@@ -292,6 +292,43 @@ p { margin-top: 0; }
 .row-title { overflow: hidden; margin-bottom: 3px; font-size: 13px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 .row-sub { color: var(--muted); font-size: 10px; font-weight: 500; }
 .row-amount { font-size: 13px; font-weight: 800; text-align: right; letter-spacing: -.015em; font-variant-numeric: tabular-nums; }
+.transaction-kind {
+  display: inline-flex;
+  margin-left: 5px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 750;
+}
+.transaction-kind.refund, .transaction-kind.transfer-in { background: #eaf7f1; color: #187557; }
+.transaction-kind.transfer-out, .transaction-kind.charge { background: #edf3fb; color: #376d9c; }
+.transaction-kind.pending { background: #fff6dd; color: #916a13; }
+.transaction-kind.point, .transaction-kind.excluded { background: #f1f2f4; color: #767c82; }
+.row-amount.refund, .row-amount.transfer_in { color: var(--green); }
+.row-amount.transfer_out, .row-amount.charge { color: #52799d; }
+.row-amount.pending, .row-amount.point, .row-amount.excluded { color: var(--muted); }
+.cash-movement-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.cash-movement-grid span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px;
+  border-radius: 13px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+.cash-movement-grid strong { color: var(--ink); font-size: 11px; }
 
 .filters {
   display: grid;
@@ -949,6 +986,80 @@ dialog form { display: grid; gap: 16px; padding: 22px; }
   font-weight: 800;
   letter-spacing: .08em;
 }
+.ocr-review-summary {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid rgb(158 184 209 / 26%);
+  border-radius: 15px;
+  background: rgb(255 255 255 / 42%);
+}
+.ocr-screen-chip {
+  color: var(--green-deep);
+  font-size: 11px;
+  font-weight: 800;
+}
+.ocr-confidence-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.ocr-confidence-grid span {
+  display: grid;
+  gap: 2px;
+  padding: 7px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 48%);
+  color: var(--muted);
+  font-size: 8px;
+}
+.ocr-confidence-grid b { color: var(--ink-soft); font-size: 10px; }
+.ocr-decision, .ocr-item-status > span:first-child {
+  width: fit-content;
+  border-radius: 99px;
+  padding: 4px 8px;
+  font-size: 8px;
+  font-weight: 800;
+}
+.ocr-decision.auto, .ocr-item-status .auto { background: #e2f6ec; color: #16745c; }
+.ocr-decision.review, .ocr-item-status .review { background: #fff2df; color: #a4621e; }
+.ocr-decision.excluded, .ocr-item-status .excluded { background: #f1f3f5; color: #65717d; }
+.ocr-review-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ocr-review-counts span {
+  border-radius: 99px;
+  padding: 4px 7px;
+  font-size: 8px;
+  font-weight: 800;
+}
+.ocr-review-counts .auto { background: #e2f6ec; color: #16745c; }
+.ocr-review-counts .review { background: #fff2df; color: #a4621e; }
+.ocr-review-counts .excluded { background: #f1f3f5; color: #65717d; }
+.ocr-duplicate-warning, .ocr-summary-reason {
+  margin: 0;
+  color: #8b6625;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+.ocr-summary-reason { color: var(--ink-soft); font-weight: 600; }
+.ocr-image-reference {
+  display: grid;
+  gap: 10px;
+  padding: 2px 2px 0;
+}
+.ocr-image-reference .text-button { justify-self: start; color: var(--green); }
+.ocr-image-reference img {
+  max-height: 240px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  object-fit: contain;
+  background: rgb(255 255 255 / 55%);
+}
 .field textarea { min-height: 92px; resize: vertical; line-height: 1.55; }
 .ocr-field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .field-hint { min-height: 14px; color: var(--green); font-size: 9px; font-weight: 650; }
@@ -976,8 +1087,87 @@ dialog form { display: grid; gap: 16px; padding: 22px; }
   margin-bottom: 12px;
 }
 .ocr-batch-title label { color: var(--green); font-size: 10px; font-weight: 750; }
-.ocr-batch-title input { vertical-align: -2px; }
+.ocr-batch-title input { width: 22px; height: 22px; vertical-align: -6px; accent-color: var(--green); }
 .ocr-batch-title strong { color: var(--ink-soft); font-size: 10px; }
+.ocr-item-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -2px 0 10px;
+  color: var(--muted);
+  font-size: 8px;
+}
+.ocr-reasons {
+  margin: -3px 0 10px;
+  color: var(--ink-soft);
+  font-size: 9px;
+  line-height: 1.5;
+}
+.ocr-error-message {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid rgb(194 80 80 / 18%);
+  border-radius: 14px;
+  background: rgb(255 242 242 / 82%);
+  color: #9a3e3e;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.55;
+}
+.ocr-duplicate-choice {
+  display: grid;
+  gap: 6px;
+  margin-top: 2px;
+  padding: 10px;
+  border: 1px solid rgb(222 165 74 / 24%);
+  border-radius: 12px;
+  background: rgb(255 248 234 / 62%);
+}
+.ocr-duplicate-choice p {
+  margin: 0;
+  color: #8b6625;
+  font-size: 9px;
+  font-weight: 750;
+}
+.ocr-duplicate-choice select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid rgb(222 165 74 / 24%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 66%);
+  padding: 7px 9px;
+  color: var(--ink-soft);
+  font-size: 9px;
+}
+.ocr-complete-summary {
+  margin: 0;
+  color: var(--green-deep);
+  font-size: 12px;
+  font-weight: 800;
+}
+.ocr-complete-list {
+  display: grid;
+  gap: 8px;
+}
+.ocr-complete-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 9px;
+  align-items: center;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid rgb(158 184 209 / 25%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 46%);
+  text-align: left;
+}
+.ocr-complete-row span { display: grid; min-width: 0; gap: 2px; }
+.ocr-complete-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.ocr-complete-row small { color: var(--muted); font-size: 8px; }
+.ocr-complete-row b { font-size: 11px; }
+.ocr-complete-row i { color: var(--green); font-size: 9px; font-style: normal; font-weight: 800; }
 .ocr-batch-item .field { margin-bottom: 9px; }
 .ocr-batch-item .ocr-field-grid:last-child { grid-template-columns: 1fr; }
 

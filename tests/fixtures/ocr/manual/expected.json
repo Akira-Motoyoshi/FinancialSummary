@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "note": "実画像のOCR結果を手修正したgolden text。画像本体は個人情報を含むためリポジトリに保存しない。",
+  "fixtures": {
+    "paypay-history-01": {
+      "screenType": "paypay_history",
+      "paymentMethod": "PayPay",
+      "transactions": [
+        { "merchantNormalized": "うさこさんに送る", "amount": 3200, "transactionAt": "2026-06-29T23:03", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false },
+        { "merchantNormalized": "apollostationからの返金", "amount": 13624, "transactionAt": "2026-06-28T14:43", "direction": "refund", "status": "refund_completed", "needsReview": true, "excluded": false },
+        { "merchantNormalized": "PayPay", "amount": 0, "currency": "JPY", "transactionAt": "2026-06-28", "direction": "point", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "ポイントは円の取引ではないため除外" },
+        { "merchantNormalized": "PayPay", "amount": 0, "currency": "JPY", "transactionAt": "2026-06-28", "direction": "point", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "ポイントは円の取引ではないため除外" },
+        { "merchantNormalized": "ゆうちょ銀行からのチャージ", "amount": 13070, "transactionAt": "2026-06-28T14:41", "direction": "internal_transfer", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "チャージのため除外" }
+      ]
+    },
+    "paypay-history-02": {
+      "screenType": "paypay_history",
+      "paymentMethod": "PayPay",
+      "transactions": [
+        { "merchantNormalized": "べさんから受け取る", "amount": 977, "transactionAt": "2026-06-17T21:12", "direction": "transfer_in", "status": "settled", "needsReview": true, "excluded": false },
+        { "merchantNormalized": "ヒロミツさんに送る", "amount": 3400, "transactionAt": "2026-06-14T22:43", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false },
+        { "merchantNormalized": "ゆうちょ銀行からのチャージ", "amount": 5000, "transactionAt": "2026-06-14T22:43", "direction": "internal_transfer", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "チャージのため除外" },
+        { "merchantNormalized": "PayPay", "amount": 0, "currency": "JPY", "transactionAt": "2026-06-14", "direction": "point", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "ポイントは円の取引ではないため除外" },
+        { "merchantNormalized": "アーミーショップSAKURA", "amount": 5000, "transactionAt": "2026-06-14T14:59", "direction": "expense", "status": "settled", "category": "other-expense", "needsReview": false, "excluded": false }
+      ]
+    },
+    "paypay-transfer-01": {
+      "screenType": "paypay_transfer_history",
+      "paymentMethod": "PayPay",
+      "transactions": [
+        { "merchantNormalized": "うさこさんに送る", "amount": 3200, "transactionAt": "2026-06-29T23:03", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false },
+        { "merchantNormalized": "べさんに送る", "amount": 600, "transactionAt": "2026-06-23T10:20", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false },
+        { "merchantNormalized": "ヒロミツさんに送る", "amount": 3400, "transactionAt": "2026-06-14T22:43", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false },
+        { "merchantNormalized": "べさんに送る", "amount": 1812, "transactionAt": "2026-05-28T23:57", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false }
+      ]
+    },
+    "paypay-transfer-02": {
+      "screenType": "paypay_transfer_history",
+      "paymentMethod": "PayPay",
+      "transactions": [
+        { "merchantNormalized": "れんせーさんに送る", "amount": 2250, "transactionAt": "2026-05-26T23:10", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false },
+        { "merchantNormalized": "べさんに送る", "amount": 2000, "transactionAt": "2026-05-14T21:40", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false },
+        { "merchantNormalized": "ちはなさんに送る", "amount": 2009, "transactionAt": "2026-05-11T09:20", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false },
+        { "merchantNormalized": "べさんに送る", "amount": 3852, "transactionAt": "2026-05-07T02:16", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false },
+        { "merchantNormalized": "ゆさんに送る", "amount": 262, "transactionAt": "2026-05-04T18:13", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false }
+      ]
+    },
+    "card-statement-01": {
+      "screenType": "card_statement",
+      "paymentMethod": "クレジットカード",
+      "transactions": [
+        { "merchantNormalized": "イオンリテール", "amount": 579, "transactionAt": "2026-05-13", "direction": "expense", "status": "settled", "category": "food", "excluded": false },
+        { "merchantNormalized": "モバイルSuica", "amount": 1000, "transactionAt": "2026-05-15", "direction": "expense", "status": "settled", "category": "transport", "excluded": false },
+        { "merchantNormalized": "ENEOS-SS", "amount": 500, "transactionAt": "2026-05-16", "direction": "expense", "status": "settled", "category": "other-expense", "excluded": false },
+        { "merchantNormalized": "ENEOS-SS", "amount": 994, "transactionAt": "2026-05-16", "direction": "expense", "status": "settled", "category": "other-expense", "excluded": false },
+        { "merchantNormalized": "FIT PLACE", "amount": 3278, "transactionAt": "2026-05-18", "direction": "expense", "status": "settled", "category": "other-expense", "excluded": false },
+        { "merchantNormalized": "モバイルSuica", "amount": 1000, "transactionAt": "2026-05-20", "direction": "expense", "status": "settled", "category": "transport", "excluded": false },
+        { "merchantNormalized": "モバイルSuica", "amount": 1000, "transactionAt": "2026-05-20", "direction": "expense", "status": "settled", "category": "transport", "excluded": false }
+      ]
+    },
+    "card-statement-02": {
+      "screenType": "card_statement",
+      "paymentMethod": "クレジットカード",
+      "transactions": [
+        { "merchantNormalized": "イオンリテール", "amount": 2616, "transactionAt": "2026-04-20", "direction": "expense", "status": "settled", "category": "food", "excluded": false },
+        { "merchantNormalized": "まいばすけっと", "amount": 236, "transactionAt": "2026-04-22", "direction": "expense", "status": "settled", "category": "food", "excluded": false },
+        { "merchantNormalized": "モバイルSuica", "amount": 1000, "transactionAt": "2026-04-25", "direction": "expense", "status": "settled", "category": "transport", "excluded": false },
+        { "merchantNormalized": "モバイルSuica", "amount": 1000, "transactionAt": "2026-04-28", "direction": "expense", "status": "settled", "category": "transport", "excluded": false },
+        { "merchantNormalized": "モバイルSuica", "amount": 1000, "transactionAt": "2026-04-29", "direction": "expense", "status": "settled", "category": "transport", "excluded": false },
+        { "merchantNormalized": "東京西横丁", "amount": 900, "transactionAt": "2026-04-29", "direction": "expense", "status": "settled", "category": "other-expense", "excluded": false }
+      ],
+      "excludedLines": ["5月26日 お支払い分のご利用明細", "本吉 顕 様 ご利用分", "＜お支払金額総合計＞ 53,083円"]
+    }
+  }
+}
