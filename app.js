@@ -310,7 +310,7 @@ function renderList() {
     <div class="filters">
       <input id="search" type="search" placeholder="店名・カテゴリ・支払方法を検索" value="${escapeHtml(oldSearch)}" />
       <select id="type-filter">
-        <option value="all">すべて</option><option value="expense">支出</option><option value="income">収入</option><option value="refund">返金</option><option value="transfer">送金・受取・チャージ</option><option value="point">ポイント</option><option value="pending">未確定</option>
+        <option value="all">すべて</option><option value="expense">支出</option><option value="transfer_out">送金</option><option value="transfer_in">受取</option><option value="charge">チャージ</option><option value="refund">返金</option><option value="point">ポイント</option><option value="income">収入</option><option value="review">要確認</option>
       </select>
       <select id="month-filter" class="month-filter">
         <option value="all">すべての期間</option>
@@ -820,7 +820,7 @@ function resetOCRDialog() {
   document.querySelector("#ocr-single-fields").classList.remove("hidden");
   document.querySelector("#ocr-batch-fields").classList.add("hidden");
   document.querySelector("#ocr-batch-list").innerHTML = "";
-  ["date", "amount", "merchant", "paymentMethod", "direction", "status", "category"].forEach((name) => {
+  ["date", "amount", "merchant", "paymentMethod", "transactionType", "direction", "status", "category"].forEach((name) => {
     form.elements[name].disabled = false;
   });
   document.querySelector("#ocr-review-summary").innerHTML = "";
@@ -878,12 +878,35 @@ function formatOCRConfidence(value) {
   return `${Math.max(0, Math.min(100, Math.round(normalized || 0)))}%`;
 }
 
-function ocrDecisionLabel(transaction) {
-  const transactionType = transaction.transactionType
+const OCR_TYPE_INFO = {
+  expense: ["支出", "支出合計に含めます"],
+  income: ["収入", "収入として記録します"],
+  transfer_out: ["送金枠", "支出合計に含めず、送金として記録します"],
+  transfer_in: ["受取枠", "支出合計に含めず、受取として記録します"],
+  charge: ["チャージ枠", "支出合計に含めず、チャージとして記録します"],
+  refund: ["返金枠", "支出合計に含めず、返金として記録します"],
+  point: ["ポイント", "円の支出には含めず、ポイントとして記録します"],
+  unknown: ["不明", "種別を確認してから登録してください"],
+};
+
+function ocrTransactionType(transaction = {}) {
+  return transaction.transactionType
     || window.OCRService?.transactionTypeForDirection?.(transaction.direction)
-    || transaction.direction;
+    || transaction.direction
+    || "unknown";
+}
+
+function ocrTypeInfo(transaction) {
+  return OCR_TYPE_INFO[ocrTransactionType(transaction)] || OCR_TYPE_INFO.unknown;
+}
+
+function ocrDecisionLabel(transaction) {
+  const transactionType = ocrTransactionType(transaction);
   if (transactionType === "charge") return ["チャージ枠", "review"];
-  if (transactionType === "point") return ["ポイント・除外", "excluded"];
+  if (transactionType === "point") return ["ポイント", "excluded"];
+  if (["transfer_out", "transfer_in", "refund"].includes(transactionType)) {
+    return [OCR_TYPE_INFO[transactionType][0], "review"];
+  }
   if (transaction.status === "excluded") return ["除外", "excluded"];
   if (transaction.decisionConfidence >= 0.95 && !transaction.needsReview) return ["自動登録候補", "auto"];
   return ["要確認", "review"];
@@ -908,6 +931,7 @@ function renderOCRReviewSummary(result) {
   const primary = result.transactions.find((transaction) => transaction.status !== "excluded") || result.transactions[0];
   const label = window.OCRService?.screenLabels?.[result.screenType] || "判定できませんでした";
   const decision = ocrDecisionLabel(primary);
+  const [typeLabel, typeDescription] = ocrTypeInfo(primary);
   const counts = result.transactions.reduce((summary, transaction) => {
     const type = ocrDecisionLabel(transaction)[1];
     summary[type] += 1;
@@ -928,7 +952,8 @@ function renderOCRReviewSummary(result) {
     + '<span class="review">要確認 ' + counts.review + "件</span>"
     + '<span class="excluded">除外 ' + counts.excluded + "件</span></div>"
     + (counts.duplicates ? '<p class="ocr-duplicate-warning">重複候補が' + counts.duplicates + "件あります。登録方法を確認してください。</p>" : "")
-    + '<div class="ocr-decision ' + decision[1] + '">' + decision[0] + "・判断 " + formatOCRConfidence(primary.decisionConfidence) + "</div>" + reasons;
+    + '<div class="ocr-decision ' + decision[1] + '">' + decision[0] + "・判断 " + formatOCRConfidence(primary.decisionConfidence) + "</div>"
+    + '<p class="ocr-type-description"><strong>' + escapeHtml(typeLabel) + '</strong>：' + escapeHtml(typeDescription) + "</p>" + reasons;
 }
 
 function renderOCRBatch(transactions) {
@@ -936,11 +961,12 @@ function renderOCRBatch(transactions) {
   document.querySelector("#ocr-batch-count").textContent = `${transactions.length}件の明細を検出`;
   document.querySelector("#ocr-batch-list").innerHTML = transactions.map((transaction, index) => {
     const decision = ocrDecisionLabel(transaction);
-    const transactionType = transaction.transactionType
-      || window.OCRService?.transactionTypeForDirection?.(transaction.direction)
-      || transaction.direction;
+    const transactionType = ocrTransactionType(transaction);
     const checked = transactionType === "charge"
       || (transaction.status !== "excluded" && transactionType !== "point");
+    const typeOptions = ["expense", "income", "transfer_out", "transfer_in", "charge", "refund", "point"]
+      .map((type) => '<option value="' + type + '"' + (transactionType === type ? " selected" : "") + ">" + OCR_TYPE_INFO[type][0] + "</option>").join("");
+    const [typeLabel, typeDescription] = ocrTypeInfo(transaction);
     const reason = transaction.reasons?.length
       ? '<p class="ocr-reasons">' + transaction.reasons.map((item) => escapeHtml(item)).join("・") + "</p>" : "";
     const paymentOptions = paymentMethods.map((method) => '<option value="' + method + '"' + (method === transaction.paymentMethod ? " selected" : "") + ">" + method + "</option>").join("");
@@ -948,13 +974,14 @@ function renderOCRBatch(transactions) {
       + '<div class="ocr-batch-title"><label><input class="ocr-batch-include" type="checkbox"' + (checked ? " checked" : "") + " /> 登録する</label>"
       + '<strong>明細 ' + (index + 1) + "</strong></div>"
       + '<div class="ocr-item-status"><span class="' + decision[1] + '">' + decision[0] + "</span><span>OCR " + formatOCRConfidence(transaction.ocrConfidence) + "・判断 " + formatOCRConfidence(transaction.decisionConfidence) + "</span></div>"
+      + '<p class="ocr-type-description"><strong>' + escapeHtml(typeLabel) + '</strong>：' + escapeHtml(typeDescription) + "</p>"
       + reason
       + '<div class="ocr-field-grid"><label class="field">日付<input data-field="date" type="date" value="' + escapeHtml(transaction.date) + '" /></label>'
       + '<label class="field">金額<input data-field="amount" type="number" min="1" inputmode="numeric" value="' + (Number(transaction.amount) || "") + '" /></label></div>'
       + '<label class="field">店名<input data-field="merchant" maxlength="50" value="' + escapeHtml(transaction.merchantRaw || transaction.merchant) + '" /></label>'
       + '<div class="ocr-field-grid"><label class="field">支払い方法<select data-field="paymentMethod">' + paymentOptions + "</select></label>"
       + '<label class="field">カテゴリ<select data-field="category">' + ocrCategoryOptions(transaction.categoryCandidates, transaction.category) + "</select></label></div>"
-      + '<div class="ocr-field-grid"><label class="field">収支方向<select data-field="direction"><option value="expense"' + (transaction.direction === "expense" ? " selected" : "") + '>支出</option><option value="income"' + (transaction.direction === "income" ? " selected" : "") + '>収入</option><option value="transfer_out"' + (transaction.direction === "transfer_out" ? " selected" : "") + '>送金（出金）</option><option value="transfer_in"' + (transaction.direction === "transfer_in" ? " selected" : "") + '>受取（入金）</option><option value="refund"' + (transaction.direction === "refund" ? " selected" : "") + '>返金</option><option value="internal_transfer"' + (transaction.direction === "internal_transfer" ? " selected" : "") + '>チャージ</option><option value="point"' + (transaction.direction === "point" ? " selected" : "") + '>ポイント</option></select></label>'
+      + '<div class="ocr-field-grid"><label class="field">取引種別<select data-field="transactionType">' + typeOptions + '</select></label>'
       + '<label class="field">状態<select data-field="status"><option value="settled"' + (transaction.status === "settled" ? " selected" : "") + '>確定</option><option value="pending"' + (transaction.status === "pending" ? " selected" : "") + '>保留</option><option value="refund_completed"' + (transaction.status === "refund_completed" ? " selected" : "") + '>返金完了</option><option value="excluded"' + (transaction.status === "excluded" ? " selected" : "") + '>除外</option></select></label></div>'
       + duplicateResolutionMarkup(transaction, true) + "</article>";
   }).join("");
@@ -975,7 +1002,8 @@ function showOCRResult(result) {
   form.elements.amount.value = primary?.amount || "";
   form.elements.merchant.value = primary?.merchantRaw || primary?.merchant || "";
   form.elements.paymentMethod.value = primary?.paymentMethod || "その他";
-  form.elements.direction.value = ["expense", "income", "transfer_out", "transfer_in", "refund", "internal_transfer", "point"].includes(primary?.direction) ? primary.direction : "expense";
+  form.elements.transactionType.value = ["expense", "income", "transfer_out", "transfer_in", "charge", "refund", "point"].includes(ocrTransactionType(primary)) ? ocrTransactionType(primary) : "expense";
+  form.elements.direction.value = primary?.direction || (ocrTransactionType(primary) === "charge" ? "internal_transfer" : ocrTransactionType(primary));
   form.elements.status.value = primary?.status || "settled";
   setOCRCategoryOptions(primary || result);
   renderOCRReviewSummary(result);
@@ -983,7 +1011,7 @@ function showOCRResult(result) {
   document.querySelector("#ocr-review-image").src = ocrPreviewUrl;
   document.querySelector("#ocr-single-fields").classList.toggle("hidden", isBatch);
   document.querySelector("#ocr-batch-fields").classList.toggle("hidden", !isBatch);
-  ["date", "amount", "merchant", "paymentMethod", "direction", "status", "category"].forEach((name) => {
+  ["date", "amount", "merchant", "paymentMethod", "transactionType", "direction", "status", "category"].forEach((name) => {
     form.elements[name].disabled = isBatch;
   });
   if (isBatch) {
@@ -1337,6 +1365,8 @@ document.querySelector("#delete-savings-goal-button").addEventListener("click", 
 function ocrEntryFromFormItem(item, data) {
   const candidate = latestOCRResult?.transactions?.[Number(item?.dataset?.candidateIndex) || 0] || {};
   const read = (field) => item ? item.querySelector('[data-field="' + field + '"]').value : data[field];
+  const selectedType = read("transactionType") || ocrTransactionType(candidate);
+  const direction = selectedType === "charge" ? "internal_transfer" : selectedType;
   return {
     candidate,
     date: read("date"),
@@ -1344,7 +1374,8 @@ function ocrEntryFromFormItem(item, data) {
     merchant: String(read("merchant") || "").trim(),
     paymentMethod: read("paymentMethod"),
     category: read("category") || "other-expense",
-    direction: read("direction") || candidate.direction || "expense",
+    transactionType: selectedType,
+    direction: direction || candidate.direction || "expense",
     status: read("status") || candidate.status || "settled",
     duplicateResolution: item?.querySelector('[data-field="duplicateResolution"]')?.value
       || document.querySelector('#ocr-single-duplicate-choice select')?.value || "separate",
@@ -1353,7 +1384,8 @@ function ocrEntryFromFormItem(item, data) {
 
 function transactionFromOCREntry(entry, rawText) {
   const candidate = entry.candidate || {};
-  const transactionType = candidate.transactionType
+  const transactionType = entry.transactionType
+    || candidate.transactionType
     || window.OCRService?.transactionTypeForDirection?.(entry.direction)
     || (entry.direction === "internal_transfer" ? "charge" : entry.direction);
   const merchantNormalized = aliasMerchant(entry.merchant);
@@ -1440,7 +1472,7 @@ document.querySelector("#ocr-form").addEventListener("submit", (event) => {
   const savedCandidates = new Set(entries.map((entry) => entry.candidate));
   const summary = {
     excluded: (latestOCRResult?.transactions || []).filter((candidate) => candidate.status === "excluded" && !savedCandidates.has(candidate)).length,
-    separate: entries.filter((entry) => ["charge", "point"].includes(
+    separate: entries.filter((entry) => ["transfer_out", "transfer_in", "charge", "refund", "point"].includes(
       entry.candidate?.transactionType
         || window.OCRService?.transactionTypeForDirection?.(entry.direction),
     )).length,

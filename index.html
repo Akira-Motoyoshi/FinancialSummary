@@ -222,9 +222,10 @@
               </select>
             </label>
             <div class="ocr-field-grid">
-              <label class="field">収支方向
-                <select name="direction"><option value="expense">支出</option><option value="income">収入</option><option value="transfer_out">送金（出金）</option><option value="transfer_in">受取（入金）</option><option value="refund">返金</option><option value="internal_transfer">チャージ</option><option value="point">ポイント</option></select>
+              <label class="field">取引種別
+                <select name="transactionType"><option value="expense">支出</option><option value="income">収入</option><option value="transfer_out">送金</option><option value="transfer_in">受取</option><option value="charge">チャージ</option><option value="refund">返金</option><option value="point">ポイント</option></select>
               </label>
+              <input type="hidden" name="direction" value="expense" />
               <label class="field">状態
                 <select name="status"><option value="settled">確定</option><option value="pending">保留</option><option value="refund_completed">返金完了</option><option value="excluded">除外</option></select>
               </label>

@@ -54,10 +54,12 @@
       point: 0,
       excluded: 0,
       net: 0,
+      reviewCount: 0,
     };
     transactions.filter((transaction) => !month || transaction.date?.startsWith(month)).forEach((transaction) => {
       const amount = Number(transaction.amount) || 0;
       const kind = kindOf(transaction);
+      if (transaction?.ocr?.needsReview || statusOf(transaction) === "pending") result.reviewCount += 1;
       if (kind === "income") result.income += amount;
       else if (kind === "expense") result.expense += amount;
       else if (kind === "refund") result.refund += amount;
@@ -69,6 +71,13 @@
       else result.excluded += amount;
     });
     result.net = result.income + result.refund - result.expense;
+    result.expenseTotal = result.expense;
+    result.incomeTotal = result.income;
+    result.transferOutTotal = result.transferOut;
+    result.transferInTotal = result.transferIn;
+    result.chargeTotal = result.charge;
+    result.refundTotal = result.refund;
+    result.pointTotal = result.point;
     return result;
   }
 
@@ -84,6 +93,7 @@
   function matchesTypeFilter(transaction, filter) {
     if (filter === "all") return true;
     const kind = kindOf(transaction);
+    if (filter === "review") return Boolean(transaction?.ocr?.needsReview) || statusOf(transaction) === "pending";
     if (filter === "transfer") return kind === "transfer_in" || kind === "transfer_out" || kind === "charge";
     return kind === filter;
   }

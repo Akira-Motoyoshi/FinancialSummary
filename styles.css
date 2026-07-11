@@ -1046,6 +1046,13 @@ dialog form { display: grid; gap: 16px; padding: 22px; }
   line-height: 1.55;
 }
 .ocr-summary-reason { color: var(--ink-soft); font-weight: 600; }
+.ocr-type-description {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.ocr-type-description strong { color: var(--ink); }
 .ocr-image-reference {
   display: grid;
   gap: 10px;

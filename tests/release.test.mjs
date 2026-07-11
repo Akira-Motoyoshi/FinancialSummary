@@ -78,10 +78,24 @@ test("household totals exclude transfers, charges, points, and pending notices",
     point: 75,
     excluded: 0,
     net: 197500,
+    reviewCount: 1,
+    expenseTotal: 3000,
+    incomeTotal: 200000,
+    transferOutTotal: 1200,
+    transferInTotal: 977,
+    chargeTotal: 5000,
+    refundTotal: 500,
+    pointTotal: 75,
   }));
   assert.equal(JSON.stringify(ledger.categorySpendForTransactions(transactions, "2026-07")), JSON.stringify({ food: 3000 }));
   assert.equal(ledger.matchesTypeFilter(transactions[3], "transfer"), true);
+  assert.equal(ledger.matchesTypeFilter(transactions[3], "transfer_out"), true);
+  assert.equal(ledger.matchesTypeFilter(transactions[4], "transfer_in"), true);
+  assert.equal(ledger.matchesTypeFilter(transactions[2], "refund"), true);
+  assert.equal(ledger.matchesTypeFilter(transactions[5], "charge"), true);
+  assert.equal(ledger.matchesTypeFilter(transactions[6], "point"), true);
   assert.equal(ledger.matchesTypeFilter(transactions[7], "pending"), true);
+  assert.equal(ledger.matchesTypeFilter(transactions[7], "review"), true);
   assert.equal(ledger.labelFor(transactions[2]), "返金");
   assert.equal(ledger.signFor(transactions[6]), "");
   assert.equal(ledger.transactionTypeOf(transactions[5]), "charge");
@@ -113,6 +127,7 @@ test("OCR review and recovery affordances are present", async () => {
   assert.match(html, /id="data-import-file"/);
   assert.match(html, /id="ocr-error-message"/);
   assert.match(html, /id="transaction-ocr-fields"/);
+  assert.match(html, /name="transactionType"/);
   assert.match(app, /merchantAliases: \{\}/);
   assert.match(app, /applyMerchantAliases/);
   assert.match(app, /showOCRRegistrationComplete/);
@@ -127,6 +142,9 @@ test("OCR review and recovery affordances are present", async () => {
   assert.match(app, /この取引を削除しますか/);
   assert.match(app, /transaction\.ocr = \{/);
   assert.match(app, /transactionType/);
+  assert.match(app, /送金枠/);
+  assert.match(app, /受取枠/);
+  assert.match(app, /返金枠/);
 });
 
 test("OCR uses a real browser engine instead of fixed mock profiles", async () => {
