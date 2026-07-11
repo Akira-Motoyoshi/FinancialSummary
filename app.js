@@ -985,6 +985,22 @@ function renderOCRBatch(transactions) {
       + '<label class="field">状態<select data-field="status"><option value="settled"' + (transaction.status === "settled" ? " selected" : "") + '>確定</option><option value="pending"' + (transaction.status === "pending" ? " selected" : "") + '>保留</option><option value="refund_completed"' + (transaction.status === "refund_completed" ? " selected" : "") + '>返金完了</option><option value="excluded"' + (transaction.status === "excluded" ? " selected" : "") + '>除外</option></select></label></div>'
       + duplicateResolutionMarkup(transaction, true) + "</article>";
   }).join("");
+  updateOCRSubmitLabel();
+}
+
+function updateOCRSubmitLabel() {
+  const button = document.querySelector("#ocr-submit-button");
+  const items = [...document.querySelectorAll("#ocr-batch-list .ocr-batch-item")];
+  if (!items.length) return;
+  const selected = items.filter((item) => item.querySelector(".ocr-batch-include")?.checked);
+  const counts = selected.reduce((result, item) => {
+    const candidate = latestOCRResult?.transactions?.[Number(item.dataset.candidateIndex) || 0] || {};
+    const selectedType = item.querySelector('[data-field="transactionType"]')?.value || ocrTransactionType(candidate);
+    if (selectedType === "expense") result.expense += 1;
+    else result.separate += 1;
+    return result;
+  }, { expense: 0, separate: 0 });
+  button.textContent = counts.expense + "件の支出 + " + counts.separate + "件の別枠を確認して登録";
 }
 
 function showOCRResult(result) {
@@ -1022,7 +1038,7 @@ function showOCRResult(result) {
     duplicateChoice.classList.toggle("hidden", !primary?.duplicateCandidateIds?.length);
   }
   document.querySelector("#ocr-submit-button").textContent = isBatch
-    ? `${transactions.length}件を確認して登録`
+    ? "選択した明細を確認して登録"
     : "確認して登録";
   document.querySelector("#ocr-upload-step").classList.add("hidden");
   document.querySelector("#ocr-review-step").classList.remove("hidden");
@@ -1187,6 +1203,18 @@ document.addEventListener("input", (event) => {
 document.addEventListener("change", (event) => {
   if (event.target.id === "savings-mode") updateSavingsLabel();
   if (["type-filter", "month-filter"].includes(event.target.id)) updateFilteredList();
+  if (event.target.closest("#ocr-batch-list") && event.target.dataset.field === "transactionType") {
+    const item = event.target.closest(".ocr-batch-item");
+    const fake = { transactionType: event.target.value, direction: event.target.value };
+    const decision = ocrDecisionLabel(fake);
+    const [typeLabel, typeDescription] = ocrTypeInfo(fake);
+    const badge = item.querySelector(".ocr-item-status > span:first-child");
+    badge.textContent = decision[0];
+    badge.className = decision[1];
+    item.querySelector(".ocr-type-description").innerHTML = "<strong>" + escapeHtml(typeLabel) + "</strong>：" + escapeHtml(typeDescription);
+    updateOCRSubmitLabel();
+  }
+  if (event.target.closest("#ocr-batch-list") && event.target.classList.contains("ocr-batch-include")) updateOCRSubmitLabel();
 });
 
 document.querySelectorAll(".close-dialog").forEach((button) => {
@@ -1367,6 +1395,7 @@ function ocrEntryFromFormItem(item, data) {
   const read = (field) => item ? item.querySelector('[data-field="' + field + '"]').value : data[field];
   const selectedType = read("transactionType") || ocrTransactionType(candidate);
   const direction = selectedType === "charge" ? "internal_transfer" : selectedType;
+  const rawStatus = read("status") || candidate.status || "settled";
   return {
     candidate,
     date: read("date"),
@@ -1376,7 +1405,7 @@ function ocrEntryFromFormItem(item, data) {
     category: read("category") || "other-expense",
     transactionType: selectedType,
     direction: direction || candidate.direction || "expense",
-    status: read("status") || candidate.status || "settled",
+    status: selectedType === "expense" && rawStatus === "excluded" ? "settled" : rawStatus,
     duplicateResolution: item?.querySelector('[data-field="duplicateResolution"]')?.value
       || document.querySelector('#ocr-single-duplicate-choice select')?.value || "separate",
   };
@@ -1393,6 +1422,8 @@ function transactionFromOCREntry(entry, rawText) {
     id: id(),
     type: ["income", "transfer_in", "refund"].includes(entry.direction) ? "income" : "expense",
     amount: entry.amount,
+    unit: transactionType === "point" ? "pt" : "JPY",
+    excludedFromExpense: transactionType !== "expense",
     date: entry.date,
     category: entry.category,
     memo: entry.merchant + "（" + entry.paymentMethod + "）",
@@ -1407,6 +1438,8 @@ function transactionFromOCREntry(entry, rawText) {
       merchantNormalized,
       direction: entry.direction,
       transactionType,
+      unit: transactionType === "point" ? "pt" : "JPY",
+      excludedFromExpense: transactionType !== "expense",
       status: entry.status,
       ocrConfidence: candidate.ocrConfidence || latestOCRResult?.confidence || 0,
       decisionConfidence: candidate.decisionConfidence || 0,

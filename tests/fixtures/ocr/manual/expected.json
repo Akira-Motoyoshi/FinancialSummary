@@ -8,8 +8,8 @@
       "transactions": [
         { "merchantNormalized": "うさこさんに送る", "amount": 3200, "transactionAt": "2026-06-29T23:03", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false },
         { "merchantNormalized": "apollostationからの返金", "amount": 13624, "transactionAt": "2026-06-28T14:43", "direction": "refund", "status": "refund_completed", "needsReview": true, "excluded": false },
-        { "merchantNormalized": "PayPay", "amount": 0, "currency": "JPY", "transactionAt": "2026-06-28", "direction": "point", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "ポイントは円の取引ではないため除外" },
-        { "merchantNormalized": "PayPay", "amount": 0, "currency": "JPY", "transactionAt": "2026-06-28", "direction": "point", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "ポイントは円の取引ではないため除外" },
+        { "merchantNormalized": "PayPay", "amount": 69, "unit": "pt", "currency": "JPY", "transactionAt": "2026-06-28", "direction": "point", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "ポイントは円の取引ではないため除外" },
+        { "merchantNormalized": "PayPay", "amount": 75, "unit": "pt", "currency": "JPY", "transactionAt": "2026-06-28", "direction": "point", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "ポイントは円の取引ではないため除外" },
         { "merchantNormalized": "ゆうちょ銀行からのチャージ", "amount": 13070, "transactionAt": "2026-06-28T14:41", "direction": "internal_transfer", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "チャージのため除外" }
       ]
     },
@@ -20,7 +20,7 @@
         { "merchantNormalized": "べさんから受け取る", "amount": 977, "transactionAt": "2026-06-17T21:12", "direction": "transfer_in", "status": "settled", "needsReview": true, "excluded": false },
         { "merchantNormalized": "ヒロミツさんに送る", "amount": 3400, "transactionAt": "2026-06-14T22:43", "direction": "transfer_out", "status": "settled", "needsReview": true, "excluded": false },
         { "merchantNormalized": "ゆうちょ銀行からのチャージ", "amount": 5000, "transactionAt": "2026-06-14T22:43", "direction": "internal_transfer", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "チャージのため除外" },
-        { "merchantNormalized": "PayPay", "amount": 0, "currency": "JPY", "transactionAt": "2026-06-14", "direction": "point", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "ポイントは円の取引ではないため除外" },
+        { "merchantNormalized": "PayPay", "amount": 1000, "unit": "pt", "currency": "JPY", "transactionAt": "2026-06-14", "direction": "point", "status": "excluded", "needsReview": true, "excluded": true, "excludeReason": "ポイントは円の取引ではないため除外" },
         { "merchantNormalized": "アーミーショップSAKURA", "amount": 5000, "transactionAt": "2026-06-14T14:59", "direction": "expense", "status": "settled", "category": "other-expense", "needsReview": false, "excluded": false }
       ]
     },

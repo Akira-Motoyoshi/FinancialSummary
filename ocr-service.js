@@ -340,12 +340,17 @@
       merchantNormalized,
       merchant: merchantRaw,
       amount: Number(fields.amount) || 0,
+      unit: fields.unit || "JPY",
+      amountHasCurrency: fields.amountHasCurrency === true,
+      dateAmountNearby: fields.dateAmountNearby === true,
+      merchantQuality: fields.merchantQuality !== false && !/[�□■]{2,}/u.test(merchantRaw),
       currency: "JPY",
       date,
       transactionAt: date && time ? date + "T" + time : date,
       paymentMethod: fields.paymentMethod || "その他",
       direction,
       transactionType,
+      excludedFromExpense: transactionType !== "expense",
       status,
       category: categoryList[0]?.categoryId || "",
       categoryCandidates: categoryList,
@@ -362,8 +367,22 @@
 
   function extractPayPay(lines, context) {
     const records = [];
-    let current = { date: context.fallbackDate, hasDate: false, merchant: "", amount: 0, time: "", stateLine: "", startIndex: -1 };
+    let current = { date: context.fallbackDate, hasDate: false, merchant: "", amount: 0, amountHasCurrency: false, time: "", stateLine: "", startIndex: -1 };
     let pendingPointHeading = false;
+    const addPoint = (amount) => records.push(buildCandidate({
+      sourceType: context.screenType,
+      date: current.date || context.fallbackDate,
+      merchantRaw: "PayPayポイント",
+      amount,
+      unit: "pt",
+      amountHasCurrency: false,
+      paymentMethod: "PayPay",
+      direction: "point",
+      status: "excluded",
+      rawText: context.rawText,
+      imageReference: context.imageReference,
+      reasons: ["ポイントは円の取引ではないため除外"],
+    }));
     const dateNearCurrent = () => {
       for (let index = current.startIndex; index >= 0 && index <= Math.min(lines.length - 1, current.startIndex + 4); index += 1) {
         const candidate = parseFlexibleDate(lines[index], "");
@@ -386,6 +405,8 @@
         time: transactionDate.time,
         merchantRaw: current.merchant,
         amount: current.amount,
+        amountHasCurrency: current.amountHasCurrency,
+        dateAmountNearby: current.hasDate,
         paymentMethod: "PayPay",
         direction,
         status: candidateStatus(current.stateLine, context.screenType, direction),
@@ -394,7 +415,7 @@
         reasons,
         excludeReason: direction === "internal_transfer" ? "チャージのため除外" : "",
       }));
-      current = { date: transactionDate.date || context.fallbackDate, hasDate: false, merchant: "", amount: 0, time: "", stateLine: "", startIndex: -1 };
+      current = { date: transactionDate.date || context.fallbackDate, hasDate: false, merchant: "", amount: 0, amountHasCurrency: false, time: "", stateLine: "", startIndex: -1 };
     };
     lines.forEach((line, lineIndex) => {
       const flowState = /支払い完了|受け取り完了|送る|送金|チャージ完了|返金完了/.test(line);
@@ -407,28 +428,24 @@
           return;
         }
       }
-      if (/paypay\s*ポイント/i.test(line) || /\d[\d,\s.]*\s*pt\b/i.test(line)) {
-        if (pendingPointHeading && !/paypay\s*ポイント/i.test(line) && /\d[\d,\s.]*\s*pt\b/i.test(line)) {
+      const pointHeading = /paypay\s*ポイント/i.test(line);
+      const pointValue = /\d[\d,\s.]*\s*pt\b/i.test(line);
+      if (pointHeading || pointValue || pendingPointHeading) {
+        if (pointValue) {
+          finalize();
+          addPoint(Math.max(...amountsInLine(line, { allowExcluded: true, allowBare: true }), 0));
           pendingPointHeading = false;
           return;
         }
-        finalize();
-        records.push(buildCandidate({
-          sourceType: context.screenType,
-          date: current.date || context.fallbackDate,
-          merchantRaw: "PayPayポイント",
-          amount: 0,
-          paymentMethod: "PayPay",
-          direction: "point",
-          status: "excluded",
-          rawText: context.rawText,
-          imageReference: context.imageReference,
-          reasons: ["ポイントは円の取引ではないため除外"],
-        }));
-        pendingPointHeading = !/\d[\d,\s.]*\s*pt\b/i.test(line);
-        return;
+        if (pointHeading) {
+          if (pendingPointHeading) addPoint(0);
+          finalize();
+          pendingPointHeading = true;
+          return;
+        }
+        addPoint(0);
+        pendingPointHeading = false;
       }
-      pendingPointHeading = false;
       const inlineMerchant = merchantFromLine(line);
       if (inlineMerchant) {
         if (current.merchant && current.amount && current.hasDate && inlineMerchant !== current.merchant) finalize();
@@ -440,10 +457,14 @@
       }
       if (BALANCE_PATTERN.test(line)) return;
       const amount = amountFromLines([line]);
-      if (amount.amount) current.amount = amount.amount;
+      if (amount.amount) {
+        current.amount = amount.amount;
+        current.amountHasCurrency = amount.currency;
+      }
       if (flowState && (current.merchant || current.amount)) current.stateLine += " " + line;
       if (/支払い完了|受け取り完了/.test(current.stateLine)) finalize();
     });
+    if (pendingPointHeading) addPoint(0);
     finalize();
     return records;
   }
@@ -468,6 +489,8 @@
       time: parseTime(dateLine),
       merchantRaw: merchant,
       amount: fallbackMoney.amount,
+      amountHasCurrency: fallbackMoney.currency === true,
+      dateAmountNearby: Boolean(dateLine && fallbackMoney.amount),
       paymentMethod: "クレジットカード",
       direction,
       status: "pending",
@@ -508,6 +531,8 @@
         date: parseFlexibleDate(dateLine, context.fallbackDate),
         merchantRaw: merchant,
         amount: money.amount,
+        amountHasCurrency: money.currency === true,
+        dateAmountNearby: Boolean(money.amount),
         paymentMethod: "クレジットカード",
         direction: "expense",
         status: "settled",
@@ -529,6 +554,8 @@
       time: parseTime(dateLine),
       merchantRaw: merchantFromLines(lines),
       amount: fallbackMoney.amount,
+      amountHasCurrency: fallbackMoney.currency === true,
+      dateAmountNearby: Boolean(dateLine && fallbackMoney.amount),
       paymentMethod: parsePaymentMethod(context.rawText),
       direction: "expense",
       status: "settled",
@@ -539,13 +566,15 @@
   }
 
   function extractUnknown(lines, context) {
-    const money = amountFromLines(lines);
+    const money = amountFromLines(lines, { allowBare: true });
     const dateLine = findDateLine(lines);
     return [buildCandidate({
       sourceType: "unknown",
       date: parseFlexibleDate(dateLine, context.fallbackDate),
       merchantRaw: merchantFromLines(lines),
       amount: money.amount,
+      amountHasCurrency: money.currency === true,
+      dateAmountNearby: false,
       paymentMethod: parsePaymentMethod(context.rawText),
       direction: "unknown",
       status: "settled",
@@ -572,17 +601,22 @@
     else if (context.screenType === "receipt") records = extractReceipt(lines, context);
     else records = extractUnknown(lines, context);
     const usable = records.length ? records : extractUnknown(lines, context);
-    return usable.map((record, index) => ({
+    const withMeta = usable.map((record, index) => ({
       ...record,
       id: record.id || "ocr-" + index,
       screenType: context.screenType,
       screenTypeConfidence: detected.screenTypeConfidence,
       screenScores: detected.scores,
     }));
+    return options.score === false
+      ? withMeta
+      : withMeta.map((record) => confidenceForCandidate(record, options.ocrConfidence ?? 100));
   }
 
   function confidenceForCandidate(candidate, ocrConfidence) {
-    const amount = candidate.amount > 0 ? (/ポイント|残高/.test(candidate.rawText) && candidate.direction !== "expense" ? 0.2 : 0.94) : 0;
+    const amount = candidate.amount > 0
+      ? (candidate.unit === "pt" ? 1 : candidate.amountHasCurrency ? 0.94 : 0.45)
+      : 0;
     const date = /^20\d{2}-\d{2}-\d{2}$/.test(candidate.date) ? 0.92 : 0;
     const merchant = candidate.merchantRaw && candidate.merchantNormalized ? 0.9 : 0;
     const direction = candidate.direction === "unknown" ? 0.35 : 0.92;
@@ -594,7 +628,9 @@
     if (candidate.status === "excluded") decision = 0;
     const needsReview = candidate.status === "excluded"
       || ["transfer_out", "transfer_in", "refund", "internal_transfer", "unknown"].includes(candidate.direction)
-      || !candidate.amount || !candidate.date || !candidate.merchantRaw || decision < 0.95;
+      || !candidate.amount || !candidate.date || !candidate.merchantRaw || !candidate.amountHasCurrency
+      || !candidate.dateAmountNearby || !candidate.merchantQuality
+      || decision < 0.95;
     return {
       ...candidate,
       ocrConfidence: Math.round(raw * 100),
@@ -823,6 +859,7 @@
         fallbackDate: localDate(file),
         imageReference: options.imageReference || "",
         layout,
+        score: false,
       });
       const transactions = baseTransactions.map((candidate) => confidenceForCandidate(candidate, data.confidence));
       const primary = transactions.find((candidate) => candidate.status !== "excluded") || transactions[0];

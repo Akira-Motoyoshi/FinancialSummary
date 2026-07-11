@@ -5,6 +5,12 @@ import vm from "node:vm";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
+async function loadOCRService() {
+  const context = { window: {} };
+  vm.runInNewContext(await read("ocr-service.js"), context);
+  return context.window.OCRService;
+}
+
 test("PWA metadata and app entry points are present", async () => {
   const [html, manifestText] = await Promise.all([read("index.html"), read("manifest.webmanifest")]);
   const manifest = JSON.parse(manifestText);
@@ -145,6 +151,7 @@ test("OCR review and recovery affordances are present", async () => {
   assert.match(app, /送金枠/);
   assert.match(app, /受取枠/);
   assert.match(app, /返金枠/);
+  assert.match(app, /件の支出 \+ .*件の別枠/);
 });
 
 test("OCR uses a real browser engine instead of fixed mock profiles", async () => {
@@ -221,7 +228,8 @@ test("OCR uses a real browser engine instead of fixed mock profiles", async () =
   assert.equal(paypayWithPoints[0].merchantNormalized, "セブン-イレブン");
   assert.equal(paypayWithPoints[1].direction, "point");
   assert.equal(paypayWithPoints[1].status, "excluded");
-  assert.equal(paypayWithPoints[1].amount, 0);
+  assert.equal(paypayWithPoints[1].amount, 44);
+  assert.equal(paypayWithPoints[1].unit, "pt");
 
   const cardNotice = context.window.OCRService.extractTransactions(
     [
@@ -316,7 +324,7 @@ test("OCR uses a real browser engine instead of fixed mock profiles", async () =
     JSON.stringify(paypayScreenshot.map(({ date, amount, direction, status }) => ({ date, amount, direction, status }))),
     JSON.stringify([
       { date: "2026-07-06", amount: 446, direction: "expense", status: "settled" },
-      { date: "2026-07-06", amount: 0, direction: "point", status: "excluded" },
+      { date: "2026-07-06", amount: 44, direction: "point", status: "excluded" },
       { date: "2026-07-06", amount: 1200, direction: "transfer_out", status: "settled" },
     ]),
   );
@@ -400,4 +408,72 @@ test("manual PayPay and card-statement fixtures keep transfers, exclusions, and 
   assert.equal(card.some((transaction) => transaction.date === "2026-05-26"), false);
   assert.equal(card.filter((transaction) => transaction.merchantNormalized === "モバイルSuica").length, 3);
   assert.equal(context.window.OCRService.normalizeMerchant("ＥＮＥＯＳ－ＳＳ"), "ENEOS-SS");
+});
+
+test("PayPay noisy fixture keeps dot amounts and point units safe", async () => {
+  const service = await loadOCRService();
+  const records = service.extractTransactions(await read("tests/fixtures/ocr/manual/paypay-noisy-dot-amount.txt"), { fallbackDate: "2026-07-11" });
+  assert.equal(records.some((record) => record.amount === 70), false);
+  assert.equal(records.find((record) => record.transactionType === "charge")?.amount, 13070);
+  assert.equal(JSON.stringify(records.filter((record) => record.transactionType === "point").map((record) => [record.amount, record.unit])), JSON.stringify([[75, "pt"]]));
+});
+
+test("PayPay points are extracted once and excluded from expense", async () => {
+  const service = await loadOCRService();
+  const records = service.extractTransactions(await read("tests/fixtures/ocr/manual/paypay-history-01.txt"), { fallbackDate: "2026-07-11" });
+  assert.equal(JSON.stringify(records.filter((record) => record.transactionType === "point").map((record) => record.amount)), JSON.stringify([69, 75]));
+  assert.ok(records.filter((record) => record.transactionType === "point").every((record) => record.excludedFromExpense && record.unit === "pt"));
+});
+
+test("PayPay transfer regression classifies outgoing and incoming transfers", async () => {
+  const service = await loadOCRService();
+  const records = service.extractTransactions(await read("tests/fixtures/ocr/manual/paypay-transfer-regression.txt"), { fallbackDate: "2026-07-11" });
+  assert.equal(records.filter((record) => record.transactionType === "transfer_out").length, 3);
+  assert.equal(records.find((record) => record.merchantNormalized.includes("から受け取る"))?.transactionType, "transfer_in");
+  assert.ok(records.every((record) => record.excludedFromExpense));
+});
+
+test("PayPay refund and charge regression never becomes expense", async () => {
+  const service = await loadOCRService();
+  const records = service.extractTransactions(await read("tests/fixtures/ocr/manual/paypay-refund-charge.txt"), { fallbackDate: "2026-07-11" });
+  assert.equal(records.find((record) => record.transactionType === "refund")?.amount, 13624);
+  assert.equal(records.find((record) => record.transactionType === "charge")?.amount, 13070);
+  assert.equal(records.find((record) => record.transactionType === "expense")?.amount, 15000);
+  assert.equal(records.filter((record) => record.transactionType === "expense").length, 1);
+});
+
+test("card statement regression excludes headers, totals, and payment labels", async () => {
+  const service = await loadOCRService();
+  const records = service.extractTransactions(await read("tests/fixtures/ocr/manual/card-statement-02.txt"), { fallbackDate: "2026-07-11" });
+  assert.equal(records.some((record) => record.amount === 53083), false);
+  assert.equal(records.some((record) => /1回払い|ApplePay|本吉/.test(record.merchantRaw)), false);
+  assert.equal(records.find((record) => record.merchantNormalized === "東京西横丁")?.amount, 900);
+});
+
+test("card email notices stay pending and use the notification merchant and amount", async () => {
+  const service = await loadOCRService();
+  const records = service.extractTransactions(await read("tests/fixtures/ocr/manual/card-email-notice-02.txt"), { fallbackDate: "2026-07-11" });
+  assert.equal(records[0].sourceType, "card_email_notice");
+  assert.equal(records[0].amount, 1000);
+  assert.equal(records[0].status, "pending");
+  assert.equal(records[0].transactionType, "expense");
+});
+
+test("amounts without currency or nearby date remain review candidates", async () => {
+  const service = await loadOCRService();
+  const records = service.extractTransactions("取引履歴\nノイズ店\n999\n2026年7月1日", { fallbackDate: "2026-07-11" });
+  assert.equal(records[0].amount, 999);
+  assert.equal(records[0].needsReview, true);
+  assert.equal(records[0].amountHasCurrency, false);
+});
+
+test("changing normalized transaction type changes ledger classification", async () => {
+  const service = await read("ledger-service.js");
+  const context = { window: {} };
+  vm.runInNewContext(service, context);
+  const item = { type: "expense", transactionType: "expense", amount: 1000, date: "2026-07-11", category: "food" };
+  assert.equal(context.window.LedgerService.totalsForTransactions([item]).expenseTotal, 1000);
+  item.transactionType = "transfer_out";
+  assert.equal(context.window.LedgerService.totalsForTransactions([item]).expenseTotal, 0);
+  assert.equal(context.window.LedgerService.totalsForTransactions([item]).transferOutTotal, 1000);
 });
