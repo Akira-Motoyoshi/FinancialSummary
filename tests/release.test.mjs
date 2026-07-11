@@ -465,6 +465,9 @@ test("amounts without currency or nearby date remain review candidates", async (
   assert.equal(records[0].amount, 999);
   assert.equal(records[0].needsReview, true);
   assert.equal(records[0].amountHasCurrency, false);
+  const distant = service.extractTransactions("取引履歴\nノイズ店 999円\n不要な行\n不要な行\n不要な行\n不要な行\n2026年7月1日", { fallbackDate: "2026-07-11" });
+  assert.equal(distant[0].dateAmountNearby, false);
+  assert.equal(distant[0].needsReview, true);
 });
 
 test("changing normalized transaction type changes ledger classification", async () => {

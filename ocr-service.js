@@ -367,7 +367,7 @@
 
   function extractPayPay(lines, context) {
     const records = [];
-    let current = { date: context.fallbackDate, hasDate: false, merchant: "", amount: 0, amountHasCurrency: false, time: "", stateLine: "", startIndex: -1 };
+    let current = { date: context.fallbackDate, hasDate: false, dateIndex: -1, amountIndex: -1, merchant: "", amount: 0, amountHasCurrency: false, time: "", stateLine: "", startIndex: -1 };
     let pendingPointHeading = false;
     const addPoint = (amount) => records.push(buildCandidate({
       sourceType: context.screenType,
@@ -406,7 +406,7 @@
         merchantRaw: current.merchant,
         amount: current.amount,
         amountHasCurrency: current.amountHasCurrency,
-        dateAmountNearby: current.hasDate,
+        dateAmountNearby: current.dateIndex >= 0 && current.amountIndex >= 0 && Math.abs(current.dateIndex - current.amountIndex) <= 4,
         paymentMethod: "PayPay",
         direction,
         status: candidateStatus(current.stateLine, context.screenType, direction),
@@ -415,13 +415,14 @@
         reasons,
         excludeReason: direction === "internal_transfer" ? "チャージのため除外" : "",
       }));
-      current = { date: transactionDate.date || context.fallbackDate, hasDate: false, merchant: "", amount: 0, amountHasCurrency: false, time: "", stateLine: "", startIndex: -1 };
+      current = { date: transactionDate.date || context.fallbackDate, hasDate: false, dateIndex: -1, amountIndex: -1, merchant: "", amount: 0, amountHasCurrency: false, time: "", stateLine: "", startIndex: -1 };
     };
     lines.forEach((line, lineIndex) => {
       const flowState = /支払い完了|受け取り完了|送る|送金|チャージ完了|返金完了/.test(line);
       if (DATE_PATTERN.test(line) || TWO_DIGIT_DATE_PATTERN.test(line) || SHORT_DATE_PATTERN.test(line)) {
         current.date = parseFlexibleDate(line, current.date || context.fallbackDate);
         current.hasDate = true;
+        current.dateIndex = lineIndex;
         current.time = parseTime(line) || current.time;
         if (current.amount && current.merchant && /(に送る|から受け取る|返金|チャージ)/.test(current.merchant + " " + current.stateLine)) {
           finalize();
@@ -460,6 +461,7 @@
       if (amount.amount) {
         current.amount = amount.amount;
         current.amountHasCurrency = amount.currency;
+        current.amountIndex = lineIndex;
       }
       if (flowState && (current.merchant || current.amount)) current.stateLine += " " + line;
       if (/支払い完了|受け取り完了/.test(current.stateLine)) finalize();
