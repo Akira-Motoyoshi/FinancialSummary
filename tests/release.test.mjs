@@ -75,7 +75,8 @@ test("household totals exclude transfers, charges, points, and pending notices",
     transferOut: 1200,
     charge: 5000,
     pending: 1000,
-    excluded: 75,
+    point: 75,
+    excluded: 0,
     net: 197500,
   }));
   assert.equal(JSON.stringify(ledger.categorySpendForTransactions(transactions, "2026-07")), JSON.stringify({ food: 3000 }));
@@ -83,6 +84,8 @@ test("household totals exclude transfers, charges, points, and pending notices",
   assert.equal(ledger.matchesTypeFilter(transactions[7], "pending"), true);
   assert.equal(ledger.labelFor(transactions[2]), "返金");
   assert.equal(ledger.signFor(transactions[6]), "");
+  assert.equal(ledger.transactionTypeOf(transactions[5]), "charge");
+  assert.equal(ledger.transactionTypeOf(transactions[6]), "point");
 });
 
 test("all PWA assets referenced by the manifest exist", async () => {
@@ -123,6 +126,7 @@ test("OCR review and recovery affordances are present", async () => {
   assert.match(app, /今回のOCR登録を取り消しました/);
   assert.match(app, /この取引を削除しますか/);
   assert.match(app, /transaction\.ocr = \{/);
+  assert.match(app, /transactionType/);
 });
 
 test("OCR uses a real browser engine instead of fixed mock profiles", async () => {
@@ -298,6 +302,24 @@ test("OCR uses a real browser engine instead of fixed mock profiles", async () =
       { date: "2026-07-06", amount: 1200, direction: "transfer_out", status: "settled" },
     ]),
   );
+
+  const noisyPayPay = context.window.OCRService.extractTransactions(
+    await read("tests/fixtures/ocr/manual/paypay-noisy-dot-amount.txt"),
+    { fallbackDate: "2026-06-28" },
+  );
+  const charge = noisyPayPay.find((transaction) => transaction.direction === "internal_transfer");
+  const apollo = noisyPayPay.find((transaction) => transaction.merchantNormalized === "apollostation");
+  const mcdonalds = noisyPayPay.find((transaction) => transaction.merchantNormalized === "マクドナルド");
+  const transfer = noisyPayPay.find((transaction) => transaction.direction === "transfer_out");
+  assert.equal(charge?.amount, 13070);
+  assert.equal(charge?.transactionType, "charge");
+  assert.equal(charge?.status, "excluded");
+  assert.equal(noisyPayPay.some((transaction) => transaction.amount === 70), false);
+  assert.equal(noisyPayPay.filter((transaction) => transaction.direction === "point").length, 1);
+  assert.equal(noisyPayPay.find((transaction) => transaction.direction === "point")?.transactionType, "point");
+  assert.equal(apollo?.amount, 15000);
+  assert.equal(mcdonalds?.amount, 150);
+  assert.equal(transfer?.amount, 600);
 });
 
 test("manual PayPay and card-statement fixtures keep transfers, exclusions, and statement rows separate", async () => {
@@ -347,7 +369,9 @@ test("manual PayPay and card-statement fixtures keep transfers, exclusions, and 
   );
   assert.equal(paypay.filter((transaction) => transaction.direction === "point").length, 2);
   assert.equal(paypay.filter((transaction) => transaction.direction === "internal_transfer").length, 1);
+  assert.equal(paypay.find((transaction) => transaction.direction === "internal_transfer")?.transactionType, "charge");
   assert.equal(paypay.find((transaction) => transaction.direction === "refund").status, "refund_completed");
+  assert.equal(paypay.find((transaction) => transaction.direction === "refund")?.transactionType, "refund");
   assert.equal(paypay.some((transaction) => transaction.direction === "expense" && transaction.amount === 13070), false);
 
   const card = context.window.OCRService.extractTransactions(

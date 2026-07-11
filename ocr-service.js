@@ -39,6 +39,17 @@
     statement: "card_statement",
     auto: "",
   };
+  const TRANSACTION_TYPES = new Set([
+    "expense", "income", "transfer_out", "transfer_in", "charge", "refund", "point", "unknown",
+  ]);
+
+  function transactionTypeForDirection(direction, fallback = "unknown") {
+    const value = String(direction || "").trim();
+    if (TRANSACTION_TYPES.has(value)) return value;
+    if (value === "internal_transfer" || value === "charge") return "charge";
+    if (["expense", "income", "transfer_out", "transfer_in", "refund", "point"].includes(value)) return value;
+    return TRANSACTION_TYPES.has(fallback) ? fallback : "unknown";
+  }
 
   function localDate(file) {
     const date = file?.lastModified ? new Date(file.lastModified) : new Date();
@@ -123,16 +134,19 @@
 
   function amountsInLine(line, options = {}) {
     if (!options.allowExcluded && isExcludedMoneyLine(line)) return [];
-    const amountText = normalizedText(line)
+    let amountText = normalizedText(line)
       .replace(DATE_PATTERN, " ")
       .replace(TWO_DIGIT_DATE_PATTERN, " ")
-      .replace(SHORT_DATE_PATTERN, " ")
       .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, " ");
+    amountText = amountText.replace(SHORT_DATE_PATTERN, (match, _month, _day, offset, input) => {
+      const following = input.slice(offset + match.length);
+      return /^\s*(?:\d|円|JPY)/i.test(following) ? match : " ";
+    });
     const hasCurrency = /[¥￥円]|\bJPY\b/i.test(amountText);
     const hasLabel = AMOUNT_LABELS.test(amountText);
     if (!hasCurrency && !hasLabel && !options.allowBare) return [];
-    return [...amountText.matchAll(/(?:[¥￥]\s*)?(\d{1,3}(?:[,\s]\d{3})+|\d{1,9})\s*(?:円|JPY)?/gi)]
-      .map((match) => Number(match[1].replace(/[,\s]/g, "")))
+    return [...amountText.matchAll(/(?:[¥￥]\s*)?(\d{1,3}(?:[,\s.]\d{3})+|\d{1,9})\s*(?:円|JPY)?/gi)]
+      .map((match) => Number(match[1].replace(/[,\s.]/g, "")))
       .filter((amount) => Number.isFinite(amount) && amount > 0 && amount < 100000000);
   }
 
@@ -313,6 +327,7 @@
     const merchantRaw = fields.merchantRaw || "";
     const merchantNormalized = normalizeMerchant(merchantRaw);
     const direction = fields.direction || "unknown";
+    const transactionType = transactionTypeForDirection(fields.transactionType || direction);
     const status = fields.status || "settled";
     const categoryList = categoryCandidates(merchantRaw, direction);
     const date = fields.date || "";
@@ -330,6 +345,7 @@
       transactionAt: date && time ? date + "T" + time : date,
       paymentMethod: fields.paymentMethod || "その他",
       direction,
+      transactionType,
       status,
       category: categoryList[0]?.categoryId || "",
       categoryCandidates: categoryList,
@@ -347,6 +363,7 @@
   function extractPayPay(lines, context) {
     const records = [];
     let current = { date: context.fallbackDate, hasDate: false, merchant: "", amount: 0, time: "", stateLine: "", startIndex: -1 };
+    let pendingPointHeading = false;
     const dateNearCurrent = () => {
       for (let index = current.startIndex; index >= 0 && index <= Math.min(lines.length - 1, current.startIndex + 4); index += 1) {
         const candidate = parseFlexibleDate(lines[index], "");
@@ -390,7 +407,11 @@
           return;
         }
       }
-      if (/paypay\s*ポイント/i.test(line) || /\d+\s*pt\b/i.test(line)) {
+      if (/paypay\s*ポイント/i.test(line) || /\d[\d,\s.]*\s*pt\b/i.test(line)) {
+        if (pendingPointHeading && !/paypay\s*ポイント/i.test(line) && /\d[\d,\s.]*\s*pt\b/i.test(line)) {
+          pendingPointHeading = false;
+          return;
+        }
         finalize();
         records.push(buildCandidate({
           sourceType: context.screenType,
@@ -404,8 +425,10 @@
           imageReference: context.imageReference,
           reasons: ["ポイントは円の取引ではないため除外"],
         }));
+        pendingPointHeading = !/\d[\d,\s.]*\s*pt\b/i.test(line);
         return;
       }
+      pendingPointHeading = false;
       const inlineMerchant = merchantFromLine(line);
       if (inlineMerchant) {
         if (current.merchant && current.amount && current.hasDate && inlineMerchant !== current.merchant) finalize();
@@ -834,6 +857,7 @@
     extractTransactions,
     detectScreenType,
     normalizeMerchant,
+    transactionTypeForDirection,
     matchExistingTransactions,
     cleanOCRText,
     screenLabels: SCREEN_LABELS,

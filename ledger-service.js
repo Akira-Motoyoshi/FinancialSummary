@@ -19,19 +19,27 @@
     return transaction?.ocr?.status || "settled";
   }
 
-  function kindOf(transaction) {
+  function transactionTypeOf(transaction) {
+    const explicit = transaction?.transactionType || transaction?.ocr?.transactionType;
+    if (["expense", "income", "transfer_out", "transfer_in", "charge", "refund", "point", "unknown"].includes(explicit)) {
+      return explicit;
+    }
     const direction = directionOf(transaction);
-    const status = statusOf(transaction);
     if (direction === "internal_transfer") return "charge";
-    if (direction === "point") return "point";
+    if (["expense", "income", "transfer_out", "transfer_in", "refund", "point"].includes(direction)) return direction;
+    return transaction?.type === "income" ? "income" : "expense";
+  }
+
+  function kindOf(transaction) {
+    const transactionType = transactionTypeOf(transaction);
+    const status = statusOf(transaction);
+    if (transactionType === "charge") return "charge";
+    if (transactionType === "point") return "point";
     if (status === "excluded") {
       return "excluded";
     }
     if (status === "pending") return "pending";
-    if (direction === "refund") return "refund";
-    if (direction === "transfer_in") return "transfer_in";
-    if (direction === "transfer_out") return "transfer_out";
-    return transaction?.type === "income" ? "income" : "expense";
+    return transactionType;
   }
 
   function totalsForTransactions(transactions, month = "") {
@@ -43,6 +51,7 @@
       transferOut: 0,
       charge: 0,
       pending: 0,
+      point: 0,
       excluded: 0,
       net: 0,
     };
@@ -56,6 +65,7 @@
       else if (kind === "transfer_out") result.transferOut += amount;
       else if (kind === "charge") result.charge += amount;
       else if (kind === "pending") result.pending += amount;
+      else if (kind === "point") result.point += amount;
       else result.excluded += amount;
     });
     result.net = result.income + result.refund - result.expense;
@@ -92,6 +102,7 @@
   global.LedgerService = Object.freeze({
     directionOf,
     statusOf,
+    transactionTypeOf,
     kindOf,
     totalsForTransactions,
     categorySpendForTransactions,
