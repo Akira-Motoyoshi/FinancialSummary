@@ -8,9 +8,9 @@
   "scripts": {
     "dev": "node scripts/serve.mjs .",
     "preview": "node scripts/serve.mjs dist",
-    "build": "node --check app.js && node --check ocr-service.js && node --check insights-service.js && node --check ledger-service.js && node --check prompt-templates.js && node --check sw.js && node --test tests/release.test.mjs && node scripts/build.mjs",
-    "lint": "node --check app.js && node --check ocr-service.js && node --check insights-service.js && node --check ledger-service.js && node --check prompt-templates.js && node --check sw.js",
-    "typecheck": "node --check app.js && node --check ocr-service.js && node --check insights-service.js && node --check ledger-service.js && node --check prompt-templates.js && node --check sw.js",
+    "build": "node --check app.js && node --check app-version.js && node --check ocr-service.js && node --check insights-service.js && node --check ledger-service.js && node --check prompt-templates.js && node --check sw.js && node --test tests/release.test.mjs && node scripts/build.mjs",
+    "lint": "node --check app.js && node --check app-version.js && node --check ocr-service.js && node --check insights-service.js && node --check ledger-service.js && node --check prompt-templates.js && node --check sw.js",
+    "typecheck": "node --check app.js && node --check app-version.js && node --check ocr-service.js && node --check insights-service.js && node --check ledger-service.js && node --check prompt-templates.js && node --check sw.js",
     "test": "node --test tests/release.test.mjs"
   },
   "engines": {

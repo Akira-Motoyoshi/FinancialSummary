@@ -665,7 +665,14 @@ function renderSettings() {
       <div class="settings-list">${items.map(([action, icon, title, note]) => `
         <button class="glass-card settings-link" data-action="${action}"><span class="settings-symbol">${icon}</span><span><strong>${title}</strong><small>${note}</small></span><i>›</i></button>`).join("")}</div>
       <button class="glass-card settings-link danger-link" data-action="reset-data"><span class="settings-symbol">↻</span><span><strong>すべてのデータを消去</strong><small>収支・固定費・予算・目標を空にします</small></span><i>›</i></button>
+      <p class="app-version">家計簿ザウルス v${window.APP_VERSION || "1.00"}</p>
     </div>`;
+}
+
+function renderVersionLabels() {
+  document.querySelectorAll("[data-app-version]").forEach((element) => {
+    element.textContent = "v" + (window.APP_VERSION || "1.00");
+  });
 }
 
 function renderAll() {
@@ -676,6 +683,7 @@ function renderAll() {
   renderBudget();
   renderSavings();
   renderSettings();
+  renderVersionLabels();
 }
 
 function switchPage(pageName) {

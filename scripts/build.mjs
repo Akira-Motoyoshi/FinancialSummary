@@ -8,6 +8,7 @@ const assets = [
   "insights-service.js",
   "ledger-service.js",
   "prompt-templates.js",
+  "app-version.js",
   "manifest.webmanifest",
   "sw.js",
   "icon.svg",

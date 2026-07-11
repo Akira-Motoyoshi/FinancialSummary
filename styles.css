@@ -1053,6 +1053,13 @@ dialog form { display: grid; gap: 16px; padding: 22px; }
   line-height: 1.5;
 }
 .ocr-type-description strong { color: var(--ink); }
+.app-version {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+  letter-spacing: .04em;
+}
 .ocr-image-reference {
   display: grid;
   gap: 10px;

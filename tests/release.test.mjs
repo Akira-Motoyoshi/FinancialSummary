@@ -12,7 +12,7 @@ async function loadOCRService() {
 }
 
 test("PWA metadata and app entry points are present", async () => {
-  const [html, manifestText] = await Promise.all([read("index.html"), read("manifest.webmanifest")]);
+  const [html, manifestText, version, worker] = await Promise.all([read("index.html"), read("manifest.webmanifest"), read("app-version.js"), read("sw.js")]);
   const manifest = JSON.parse(manifestText);
 
   assert.match(html, /name="viewport"[^>]*viewport-fit=cover/);
@@ -23,6 +23,10 @@ test("PWA metadata and app entry points are present", async () => {
   assert.match(html, /id="savings-goal-form"/);
   assert.match(html, /\.\/ledger-service\.js/);
   assert.match(html, /data-action="record-subscription"/);
+  assert.match(html, /\.\/app-version\.js/);
+  assert.match(version, /APP_VERSION = "1\.00"/);
+  assert.match(worker, /importScripts\("\.\/app-version\.js"\)/);
+  assert.match(worker, /APP_VERSION\.replace/);
   assert.equal(manifest.display, "standalone");
   assert.equal(manifest.name, "貯金ザウルス");
   assert.equal(manifest.short_name, "貯金ザウルス");
@@ -152,6 +156,7 @@ test("OCR review and recovery affordances are present", async () => {
   assert.match(app, /受取枠/);
   assert.match(app, /返金枠/);
   assert.match(app, /件の支出 \+ .*件の別枠/);
+  assert.match(app, /家計簿ザウルス v\$\{window\.APP_VERSION/);
 });
 
 test("OCR uses a real browser engine instead of fixed mock profiles", async () => {
@@ -479,4 +484,29 @@ test("changing normalized transaction type changes ledger classification", async
   item.transactionType = "transfer_out";
   assert.equal(context.window.LedgerService.totalsForTransactions([item]).expenseTotal, 0);
   assert.equal(context.window.LedgerService.totalsForTransactions([item]).transferOutTotal, 1000);
+});
+
+test("PayPay charge amounts keep all digits including comma and dot grouping", async () => {
+  const service = await loadOCRService();
+  const records = service.extractTransactions(await read("tests/fixtures/ocr/manual/paypay-charge-amount-regression.txt"), { fallbackDate: "2026-07-11" });
+  assert.equal(JSON.stringify(records.map((record) => record.amount)), JSON.stringify([1200, 5000, 13070]));
+  assert.ok(records.every((record) => record.transactionType === "charge" && record.excludedFromExpense));
+  assert.equal(records.some((record) => [5, 200].includes(record.amount)), false);
+});
+
+test("PayPay points normalize to one pt candidate per entry", async () => {
+  const service = await loadOCRService();
+  const records = service.extractTransactions(await read("tests/fixtures/ocr/manual/paypay-point-pt-regression.txt"), { fallbackDate: "2026-07-11" });
+  assert.equal(JSON.stringify(records.map((record) => [record.merchantNormalized, record.amount, record.unit, record.transactionType])), JSON.stringify([
+    ["PayPayポイント", 1000, "pt", "point"],
+    ["PayPayポイント", 75, "pt", "point"],
+  ]));
+});
+
+test("small truncated-looking PayPay charge remains review-only with a warning", async () => {
+  const service = await loadOCRService();
+  const records = service.extractTransactions(await read("tests/fixtures/ocr/manual/paypay-noisy-amount-review.txt"), { fallbackDate: "2026-07-11" });
+  assert.equal(records[0].amount, 5);
+  assert.equal(records[0].needsReview, true);
+  assert.ok(records[0].reasons.some((reason) => reason.includes("桁落ち")));
 });

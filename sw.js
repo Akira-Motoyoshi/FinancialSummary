@@ -1,4 +1,6 @@
-const CACHE_NAME = "chokin-zaurus-v17";
+importScripts("./app-version.js");
+
+const CACHE_NAME = "chokin-zaurus-v" + self.APP_VERSION.replace(".", "-");
 const APP_ASSETS = [
   "./",
   "./index.html",
@@ -8,6 +10,7 @@ const APP_ASSETS = [
   "./insights-service.js",
   "./ledger-service.js",
   "./prompt-templates.js",
+  "./app-version.js",
   "./manifest.webmanifest",
   "./icon-180.png",
   "./icon-192.png",

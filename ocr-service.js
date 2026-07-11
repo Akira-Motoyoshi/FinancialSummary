@@ -290,7 +290,8 @@
     if (/mobile.*suica|モバイルsuica/i.test(compact)) return "モバイルSuica";
     if (/fitplace/i.test(key)) return "FIT PLACE";
     if (/^eneosss$/i.test(key)) return "ENEOS-SS";
-    if (/paypay/i.test(compact) && /ポイント|残高/.test(compact)) return "PayPay";
+    if (/paypay/i.test(compact) && /ポイント/.test(compact)) return "PayPayポイント";
+    if (/paypay/i.test(compact) && /残高/.test(compact)) return "PayPay";
     return compact;
   }
 
@@ -625,6 +626,7 @@
     const category = candidate.category ? candidate.categoryCandidates[0]?.score || 0.5 : candidate.direction === "point" ? 1 : 0.25;
     const screen = candidate.screenTypeConfidence || 0.35;
     const raw = Math.max(0, Math.min(1, Number(ocrConfidence) / 100));
+    const possibleDigitDrop = candidate.transactionType === "charge" && candidate.amount > 0 && candidate.amount < 1000;
     let decision = raw * 0.27 + amount * 0.23 + date * 0.16 + merchant * 0.18 + direction * 0.07 + category * 0.04 + screen * 0.05;
     if (candidate.status === "pending") decision -= 0.03;
     if (candidate.status === "excluded") decision = 0;
@@ -632,13 +634,18 @@
       || ["transfer_out", "transfer_in", "refund", "internal_transfer", "unknown"].includes(candidate.direction)
       || !candidate.amount || !candidate.date || !candidate.merchantRaw || !candidate.amountHasCurrency
       || !candidate.dateAmountNearby || !candidate.merchantQuality
+      || possibleDigitDrop
       || decision < 0.95;
+    const reasons = possibleDigitDrop
+      ? [...new Set([...(candidate.reasons || []), "金額の桁落ちの可能性があります。元画像を確認してください。"])]
+      : candidate.reasons;
     return {
       ...candidate,
       ocrConfidence: Math.round(raw * 100),
       decisionConfidence: Math.max(0, Math.min(0.99, decision)),
       confidence: Math.max(0, Math.min(0.99, decision)),
       needsReview,
+      reasons,
       confidenceBreakdown: { amount, date, merchant, direction, category, screen },
     };
   }
